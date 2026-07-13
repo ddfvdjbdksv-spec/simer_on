@@ -9,7 +9,7 @@
 //    5. أو: يُطبَّق تلقائياً بعد 10 ثوانٍ بدون تدخّل
 // ============================================================
 
-const CACHE_VERSION = 'edarat-eldroos-pwa-v23';
+const CACHE_VERSION = 'edarat-eldroos-pwa-v24';
 
 const APP_SHELL = [
   './',
@@ -18,8 +18,8 @@ const APP_SHELL = [
   './app.js',
   './user-management.js',
   './firebase-sync.js',
-  './vendor/firebase/firebase-app-compat.js',
-  './vendor/firebase/firebase-firestore-compat.js',
+  './firebase-app-compat.js',
+  './firebase-firestore-compat.js',
   './archive_functions.js',
   './platform-subscriptions.js',
   './transfer-student.js',

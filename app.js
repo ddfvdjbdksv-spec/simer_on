@@ -398,6 +398,9 @@ const StorageEngine = {
                 }
             }
         }
+        if (typeof CloudSync !== 'undefined' && CloudSync.isReady && CloudSync.isReady()) {
+            try { CloudSync.onLocalSave(storeName); } catch (e) { console.warn('[CloudSync] onLocalSave failed', e); }
+        }
     },
 
     async delete(storeName, id) {
@@ -406,7 +409,10 @@ const StorageEngine = {
         const transaction = this.db.transaction([storeName], "readwrite");
         const store = transaction.objectStore(storeName);
         store.delete(id);
-        return new Promise((resolve) => transaction.oncomplete = () => resolve());
+        await new Promise((resolve) => transaction.oncomplete = () => resolve());
+        if (typeof CloudSync !== 'undefined' && CloudSync.isReady && CloudSync.isReady()) {
+            try { CloudSync.onLocalSave(storeName); } catch (e) { console.warn('[CloudSync] onLocalSave failed', e); }
+        }
     },
 
     async get(storeName, id) {
@@ -2270,7 +2276,7 @@ function handleAddGroup() {
     // Create group
     const newGroup = { id: Date.now(), name, time, grade: currentGrade };
     db.groups.push(newGroup);
-    db.save();
+    db.save('groups');
 
     // UI Updates
     renderGroups();

@@ -105,11 +105,25 @@ const CloudSync = (() => {
     function scheduleUIRefresh() {
         clearTimeout(rerenderTimer);
         rerenderTimer = setTimeout(() => {
-            ['renderStudents', 'renderFinances', 'updateDashboardStats', 'syncUIWithContext',
-             'renderMonthlySubscriptionTables', 'renderSubscriptionTracker', 'renderPortalAttendance']
-                .forEach(fnName => {
-                    try { if (typeof window[fnName] === 'function') window[fnName](); } catch (e) {}
-                });
+            const simpleFnNames = [
+                'renderStudents', 'renderFinances', 'updateDashboardStats', 'syncUIWithContext',
+                'renderMonthlySubscriptionTables', 'renderSubscriptionTracker', 'renderPortalAttendance',
+                'renderGroups', 'renderGroupStudents', 'refreshGroupContexts'
+            ];
+            simpleFnNames.forEach(fnName => {
+                try { if (typeof window[fnName] === 'function') window[fnName](); } catch (e) {}
+            });
+
+            try {
+                if (typeof window.currentGrade !== 'undefined' && window.currentGrade) {
+                    if (typeof window.renderPortalGroups === 'function') {
+                        window.renderPortalGroups(window.currentGrade);
+                    }
+                    if (typeof window.renderGroupSelection === 'function') {
+                        window.renderGroupSelection(window.currentGrade);
+                    }
+                }
+            } catch (e) {}
         }, 700);
     }
 
@@ -400,7 +414,7 @@ const CloudSync = (() => {
 
     async function init() {
         if (typeof firebase === 'undefined' || typeof firebase.firestore !== 'function') {
-            console.error('[CloudSync] ❌ مكتبة Firebase لم تُحمَّل — لن تعمل المزامنة. تأكد من وجود ملفات vendor/firebase/ بجانب index.html');
+            console.error('[CloudSync] ❌ مكتبة Firebase لم تُحمَّل — لن تعمل المزامنة. تأكد من وجود ملفات firebase-app-compat.js و firebase-firestore-compat.js بجانب index.html');
             setStatus('offline');
             return;
         }
