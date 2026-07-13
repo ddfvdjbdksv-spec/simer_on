@@ -180,6 +180,7 @@ const CloudSync = (() => {
             });
             try {
                 await batch.commit();
+                console.log(`[CloudSync] ✅ ${table}: تمت مزامنة ${chunk.length} سجل`);
             } catch (err) {
                 console.warn(`[CloudSync] batch commit failed for ${table}`, err);
                 setStatus('error');
@@ -294,13 +295,14 @@ const CloudSync = (() => {
     // ============================================================
 
     async function init() {
-        if (typeof firebase === 'undefined') {
-            console.warn('[CloudSync] Firebase SDK غير محمَّل — سيعمل النظام محليًا فقط (Offline)');
+        if (typeof firebase === 'undefined' || typeof firebase.firestore !== 'function') {
+            console.error('[CloudSync] ❌ مكتبة Firebase لم تُحمَّل — لن تعمل المزامنة. تأكد من وجود ملفات vendor/firebase/ بجانب index.html');
             setStatus('offline');
             return;
         }
 
         loadHashes();
+        console.log('[CloudSync] بدء التهيئة...');
 
         try {
             firebase.initializeApp(FIREBASE_CONFIG);
@@ -311,17 +313,19 @@ const CloudSync = (() => {
             // النت حتى لو اتقفل المتصفح بالكامل في الأثناء (زي واتساب تمامًا)
             try {
                 await fsDB.enablePersistence({ synchronizeTabs: true });
+                console.log('[CloudSync] ✅ Offline persistence مُفعَّلة');
             } catch (e) {
                 // لو فاتح أكتر من تاب أو المتصفح مش بيدعمها — نكمّل عادي
-                console.warn('[CloudSync] Firestore persistence not enabled:', e.code || e.message);
+                console.warn('[CloudSync] ⚠️ Firestore persistence لم تُفعَّل:', e.code || e.message);
             }
 
             ready = true;
+            console.log('[CloudSync] ✅ الاتصال جاهز، مشروع Firebase:', FIREBASE_CONFIG.projectId);
             setStatus(navigator.onLine ? 'syncing' : 'offline');
 
             attachAllListeners();
 
-            window.addEventListener('online',  () => { setStatus('syncing'); pushAllTables(); });
+            window.addEventListener('online',  () => { console.log('[CloudSync] رجع النت — إعادة مزامنة'); setStatus('syncing'); pushAllTables(); });
             window.addEventListener('offline', () => setStatus('offline'));
 
             // أول تشغيل: ادفع أي بيانات محلية سابقة (قبل تفعيل المزامنة) لأعلى
@@ -329,12 +333,27 @@ const CloudSync = (() => {
 
             setTimeout(() => setStatus(navigator.onLine ? 'online' : 'offline'), 2500);
         } catch (err) {
-            console.error('[CloudSync] init failed', err);
+            console.error('[CloudSync] ❌ فشلت التهيئة:', err);
             setStatus('error');
         }
     }
 
-    return { init, onLocalSave, pushAllTables, isReady: () => ready };
+    // للاختبار اليدوي من الـ console: CloudSync.debugInfo()
+    function debugInfo() {
+        const info = {
+            ready,
+            projectId: FIREBASE_CONFIG.projectId,
+            online: navigator.onLine,
+            tablesTracked: Object.keys(hashes).filter(k => k !== '__settings'),
+            recordCountsPerTable: {},
+        };
+        SYNC_TABLES.forEach(t => { info.recordCountsPerTable[t] = Array.isArray(db[t]) ? db[t].length : 'N/A'; });
+        console.table(info.recordCountsPerTable);
+        console.log('[CloudSync] الحالة:', info);
+        return info;
+    }
+
+    return { init, onLocalSave, pushAllTables, isReady: () => ready, debugInfo, forceSync: pushAllTables };
 })();
 
 window.CloudSync = CloudSync;

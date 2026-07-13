@@ -9,7 +9,7 @@
 //    5. أو: يُطبَّق تلقائياً بعد 10 ثوانٍ بدون تدخّل
 // ============================================================
 
-const CACHE_VERSION = 'edarat-eldroos-pwa-v21';
+const CACHE_VERSION = 'edarat-eldroos-pwa-v22';
 
 const APP_SHELL = [
   './',
@@ -18,6 +18,8 @@ const APP_SHELL = [
   './app.js',
   './user-management.js',
   './firebase-sync.js',
+  './vendor/firebase/firebase-app-compat.js',
+  './vendor/firebase/firebase-firestore-compat.js',
   './archive_functions.js',
   './platform-subscriptions.js',
   './transfer-student.js',
@@ -39,9 +41,7 @@ const EXTERNAL_LIBS = [
   'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
   'https://cdn.jsdelivr.net/npm/chart.js',
   'https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
-  'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js',
-  'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
 ];
 
 // ─── Install: تحميل كل ملفات الـ App Shell في الـ Cache ───

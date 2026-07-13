@@ -586,6 +586,7 @@ const db = {
         this.students = await StorageEngine.getAll('students');
         this.attendance = await StorageEngine.getAll('attendance');
         this.payments = await StorageEngine.getAll('payments');
+        this.expenses = await StorageEngine.getAll('expenses');
         this.exams = await StorageEngine.getAll('exams');
         this.scores = await StorageEngine.getAll('scores');
         this.dailyTreasuryArchives = await StorageEngine.getAll('dailyTreasuryArchives');
