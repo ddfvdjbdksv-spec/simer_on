@@ -48,7 +48,7 @@ const CloudSync = (() => {
         'platformCourses', 'platformSubscriptions'
     ];
 
-    const HASH_STORAGE_KEY = 'cloud_sync_hashes_v1';
+    const HASH_STORAGE_KEY = 'cloud_sync_hashes_v2'; // v2: تصحيح باگ كان بيسجّل "تمت المزامنة" قبل التأكد فعليًا
 
     let fsDB = null;
     let ready = false;
@@ -117,15 +117,15 @@ const CloudSync = (() => {
     //  الدفع للسحابة (Push) — يُستدعى تلقائياً من داخل db.save()
     // ============================================================
 
-    function pushTableDiff(table) {
-        if (!ready || applyingRemote) return;
+    async function pushTableDiff(table) {
+        if (!ready || applyingRemote) return 0;
         const arr = db[table];
-        if (!Array.isArray(arr)) return;
+        if (!Array.isArray(arr)) return 0;
 
         if (!hashes[table]) hashes[table] = {};
         const tableHashes = hashes[table];
         const currentIds = new Set();
-        const ops = [];
+        const ops = []; // { type, id, data, newHash }
 
         arr.forEach(rec => {
             if (rec == null || rec.id === undefined || rec.id === null) return;
@@ -133,8 +133,7 @@ const CloudSync = (() => {
             currentIds.add(id);
             const h = hashOf(rec);
             if (tableHashes[id] !== h) {
-                ops.push({ type: 'set', id, data: rec });
-                tableHashes[id] = h;
+                ops.push({ type: 'set', id, data: rec, newHash: h });
             }
         });
 
@@ -142,34 +141,41 @@ const CloudSync = (() => {
         Object.keys(tableHashes).forEach(id => {
             if (!currentIds.has(id)) {
                 ops.push({ type: 'delete', id });
-                delete tableHashes[id];
             }
         });
 
-        if (!ops.length) return;
-        saveHashes();
-        flushOps(table, ops);
+        if (!ops.length) return 0;
+        await flushOps(table, ops); // الـ hash بيتحدّث جوه flushOps بعد نجاح الكتابة فعليًا فقط
+        return ops.length;
     }
 
-    function pushSettings() {
-        if (!ready || applyingRemote) return;
-        if (!db._settings) return;
+    async function pushSettings() {
+        if (!ready || applyingRemote) return false;
+        if (!db._settings) return false;
         const h = hashOf(db._settings);
-        if (hashes.__settings === h) return;
-        hashes.__settings = h;
-        saveHashes();
+        if (hashes.__settings === h) return false;
 
         setStatus('syncing');
-        fsDB.collection('meta').doc('settings')
-            .set({ ...sanitize(db._settings), _syncedAt: Date.now() }, { merge: true })
-            .then(() => setStatus(navigator.onLine ? 'online' : 'offline'))
-            .catch(err => { console.warn('[CloudSync] settings push failed', err); setStatus('error'); });
+        try {
+            await fsDB.collection('meta').doc('settings')
+                .set({ ...sanitize(db._settings), _syncedAt: Date.now() }, { merge: true });
+            hashes.__settings = h; // نحدّث الهاش بعد التأكد من نجاح الكتابة فقط
+            saveHashes();
+            setStatus(navigator.onLine ? 'online' : 'offline');
+            return true;
+        } catch (err) {
+            console.warn('[CloudSync] settings push failed', err);
+            setStatus('error');
+            return false;
+        }
     }
 
     async function flushOps(table, ops) {
         setStatus('syncing');
         const col = fsDB.collection(table);
         const CHUNK = 400; // أقل من حد الـ 500 لكل batch في Firestore
+        const tableHashes = hashes[table] || (hashes[table] = {});
+
         for (let i = 0; i < ops.length; i += CHUNK) {
             const chunk = ops.slice(i, i + CHUNK);
             const batch = fsDB.batch();
@@ -180,19 +186,117 @@ const CloudSync = (() => {
             });
             try {
                 await batch.commit();
+                // ✅ نحدّث الـ hash المحلي بعد تأكيد Firestore فعليًا للنجاح فقط —
+                // ده اللي كان ناقص قبل كده وسبب إن المزامنة تتوقف بصمت
+                chunk.forEach(op => {
+                    if (op.type === 'delete') delete tableHashes[op.id];
+                    else tableHashes[op.id] = op.newHash;
+                });
+                saveHashes();
                 console.log(`[CloudSync] ✅ ${table}: تمت مزامنة ${chunk.length} سجل`);
             } catch (err) {
-                console.warn(`[CloudSync] batch commit failed for ${table}`, err);
+                console.error(`[CloudSync] ❌ فشلت مزامنة ${table} (${chunk.length} سجل):`, err);
                 setStatus('error');
-                return; // هيتحاول تاني في أقرب db.save() جاي طالما الـ hash اتغيّر فعلاً
+                // لا نحدّث الـ hash — هيتحاول تاني تلقائيًا في أقرب db.save() أو زر يدوي
             }
         }
         setStatus(navigator.onLine ? 'online' : 'offline');
     }
 
     function pushAllTables() {
-        SYNC_TABLES.forEach(pushTableDiff);
-        pushSettings();
+        SYNC_TABLES.forEach(t => pushTableDiff(t).catch(e => console.error(`[CloudSync] push ${t} failed`, e)));
+        pushSettings().catch(e => console.error('[CloudSync] push settings failed', e));
+    }
+
+    // ── رفع يدوي بزر — يرجع تقرير واضح بعدد السجلات المرفوعة فعليًا ──
+    async function manualPushToCloud() {
+        if (!ready) {
+            alert('⚠️ الاتصال بـ Firebase غير جاهز حاليًا.\nافتح Console (F12) وشوف رسائل [CloudSync] لمعرفة السبب.');
+            return;
+        }
+        const btn = document.getElementById('manual-push-btn');
+        const originalHTML = btn ? btn.innerHTML : '';
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جارِ الرفع...'; }
+
+        setStatus('syncing');
+        const report = {};
+        for (const table of SYNC_TABLES) {
+            try { report[table] = await pushTableDiff(table); }
+            catch (e) { report[table] = 'خطأ: ' + (e.message || e); }
+        }
+        const settingsSynced = await pushSettings();
+        setStatus(navigator.onLine ? 'online' : 'offline');
+
+        if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+
+        const lines = Object.entries(report)
+            .filter(([, v]) => v !== 0)
+            .map(([t, v]) => `• ${t}: ${v}`);
+        alert(
+            '✅ انتهى الرفع للسحابة.\n\n' +
+            (lines.length ? lines.join('\n') : 'لا يوجد بيانات جديدة — كل شيء متزامن بالفعل.') +
+            (settingsSynced ? '\n• الإعدادات/المستخدمون: تم التحديث' : '')
+        );
+    }
+
+    // ── جلب يدوي بزر — يجيب كل حاجة موجودة فعليًا في Firestore ويستبدل بها المحلي ──
+    async function manualPullFromCloud() {
+        if (!ready) {
+            alert('⚠️ الاتصال بـ Firebase غير جاهز حاليًا.\nافتح Console (F12) وشوف رسائل [CloudSync] لمعرفة السبب.');
+            return;
+        }
+        if (!confirm('سيتم استبدال البيانات المحلية الحالية بكل ما هو موجود على السحابة الآن.\nهل أنت متأكد؟')) return;
+
+        const btn = document.getElementById('manual-pull-btn');
+        const originalHTML = btn ? btn.innerHTML : '';
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جارِ الجلب...'; }
+
+        setStatus('syncing');
+        applyingRemote = true;
+        const report = {};
+        try {
+            for (const table of SYNC_TABLES) {
+                const snap = await fsDB.collection(table).get({ source: 'server' });
+                report[table] = snap.size;
+                const arr = [];
+                snap.forEach(doc => {
+                    const rawId = doc.id;
+                    const numericId = isNaN(Number(rawId)) ? rawId : Number(rawId);
+                    const data = { ...doc.data(), id: numericId };
+                    delete data._syncedAt;
+                    arr.push(data);
+                });
+                db[table] = arr;
+                await StorageEngine.save(table, arr).catch(() => {});
+                hashes[table] = {};
+                arr.forEach(r => { hashes[table][String(r.id)] = hashOf(r); });
+            }
+
+            const settingsDoc = await fsDB.collection('meta').doc('settings').get({ source: 'server' });
+            report['الإعدادات'] = settingsDoc.exists ? 'موجودة' : 'غير موجودة';
+            if (settingsDoc.exists) {
+                const data = { ...settingsDoc.data() };
+                delete data._syncedAt;
+                db._settings = { ...db._settings, ...data };
+                localStorage.setItem('edu_master_settings', JSON.stringify(db._settings));
+                hashes.__settings = hashOf(db._settings);
+            }
+            saveHashes();
+        } catch (err) {
+            console.error('[CloudSync] ❌ فشل الجلب من السحابة', err);
+            applyingRemote = false;
+            setStatus('error');
+            if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+            alert('❌ فشل جلب البيانات من السحابة:\n' + (err.message || err) + '\n\nافتح Console (F12) لمزيد من التفاصيل.');
+            return;
+        }
+        applyingRemote = false;
+        setStatus(navigator.onLine ? 'online' : 'offline');
+        scheduleUIRefresh();
+        if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+
+        const lines = Object.entries(report).map(([t, v]) => `• ${t}: ${v}`);
+        alert('✅ انتهى الجلب من السحابة:\n\n' + lines.join('\n'));
     }
 
     // يُستدعى من نهاية db.save() الأصلية في app.js
@@ -353,7 +457,13 @@ const CloudSync = (() => {
         return info;
     }
 
-    return { init, onLocalSave, pushAllTables, isReady: () => ready, debugInfo, forceSync: pushAllTables };
+    return {
+        init, onLocalSave, pushAllTables, isReady: () => ready, debugInfo,
+        forceSync: pushAllTables,
+        manualPushToCloud, manualPullFromCloud
+    };
 })();
 
 window.CloudSync = CloudSync;
+window.manualPushToCloud  = () => CloudSync.manualPushToCloud();
+window.manualPullFromCloud = () => CloudSync.manualPullFromCloud();
