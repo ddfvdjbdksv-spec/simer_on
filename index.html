@@ -7,8 +7,8 @@
     <meta name="theme-color" content="#4f46e5">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="نظام إدارة الدروس">
-    <title>نظام إدارة الدروس</title>
+    <meta name="apple-mobile-web-app-title" content="سنتر العباقرة">
+    <title>سنتر العباقرة</title>
     <style>
         .search-results-dropdown {
             position: absolute;
@@ -93,7 +93,7 @@
                 <div class="splash-logo" style="margin-bottom: 1.5rem;">
                     <i class="fas fa-university"></i>
                 </div>
-                <h1 class="splash-title">نظام إدارة الدروس</h1>
+                <h1 class="splash-title">سنتر العباقرة</h1>
                 <p class="splash-subtitle">نظام الإدارة المتكامل</p>
 
                 <div id="password-screen">
@@ -147,7 +147,7 @@
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
         <div class="logo">
-            <i class="fas fa-book-open"></i> نظام إدارة الدروس
+            <i class="fas fa-book-open"></i> سنتر العباقرة
         </div>
         <div id="current-grade-badge"
             style="text-align: center; margin-bottom: 1.5rem; padding: 0.5rem; background: var(--bg-light); border-radius: 10px; font-weight: 700; color: var(--primary);">
@@ -880,13 +880,17 @@
                     <h2 id="active-group-detail-title"
                         style="display: inline-block; font-weight: 800; color: var(--primary);">اسم المجموعة</h2>
                 </div>
-                <div style="display: flex; gap: 1rem;">
+                <div style="display: flex; gap: 1rem; align-items: center;">
                     <button class="btn btn-primary" onclick="openAddStudentForGroup()">
                         <i class="fas fa-user-plus"></i> إضافة طالب للمجموعة
                     </button>
                     <button class="btn" style="background: var(--vibrant-orange); color: white;"
                         onclick="openGroupScanner()">
                         <i class="fas fa-qrcode"></i> تسجيل حضور المجموعة
+                    </button>
+                    <button class="btn btn-danger" style="background: var(--danger); color: white;"
+                        onclick="deleteGroup(activeGroupDetailId)">
+                        <i class="fas fa-trash"></i> حذف المجموعة
                     </button>
                 </div>
             </div>

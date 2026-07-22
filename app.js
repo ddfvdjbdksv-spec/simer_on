@@ -2537,13 +2537,13 @@ async function removeStudentFromGroup(studentId) {
 async function deleteGroup(id) {
     if (!rbacGuardDelete('حذف المجموعة')) return;
 
-    const group = db.groups.find(g => g.id == id);
+    const group = db.groups.find(g => String(g.id) === String(id));
     if (!group) return;
 
-    const studentsInGroup = db.students.filter(s => s.groupId == id);
+    const studentsInGroup = db.students.filter(s => String(s.groupId) === String(id));
     const studentsCount   = studentsInGroup.length;
-    const attendanceCount = db.attendance.filter(a => a.groupId == id).length;
-    const paymentsCount   = db.payments.filter(p => studentsInGroup.some(s => s.id == p.studentId)).length;
+    const attendanceCount = db.attendance.filter(a => String(a.groupId) === String(id)).length;
+    const paymentsCount   = db.payments.filter(p => studentsInGroup.some(s => String(s.id) === String(p.studentId))).length;
 
     // رسالة تأكيد تفصيلية
     let confirmMsg = `⚠️ حذف المجموعة: "${group.name}"\n\n`;
@@ -2557,29 +2557,41 @@ async function deleteGroup(id) {
     if (!confirm(confirmMsg)) return;
 
     // حذف الحضور المرتبط بالمجموعة
-    const attendanceToDelete = db.attendance.filter(a => a.groupId == id);
+    const attendanceToDelete = db.attendance.filter(a => String(a.groupId) === String(id));
     for (const a of attendanceToDelete) {
         await StorageEngine.delete('attendance', a.id).catch(() => {});
+        if (typeof CloudSync !== 'undefined' && CloudSync.deleteRecord) {
+            CloudSync.deleteRecord('attendance', a.id);
+        }
     }
-    db.attendance = db.attendance.filter(a => a.groupId != id);
+    db.attendance = db.attendance.filter(a => String(a.groupId) !== String(id));
 
     // حذف المدفوعات المرتبطة بطلاب هذه المجموعة
-    const studentIds = new Set(studentsInGroup.map(s => s.id));
-    const paymentsToDelete = db.payments.filter(p => studentIds.has(p.studentId));
+    const studentIds = new Set(studentsInGroup.map(s => String(s.id)));
+    const paymentsToDelete = db.payments.filter(p => studentIds.has(String(p.studentId)));
     for (const p of paymentsToDelete) {
         await StorageEngine.delete('payments', p.id).catch(() => {});
+        if (typeof CloudSync !== 'undefined' && CloudSync.deleteRecord) {
+            CloudSync.deleteRecord('payments', p.id);
+        }
     }
-    db.payments = db.payments.filter(p => !studentIds.has(p.studentId));
+    db.payments = db.payments.filter(p => !studentIds.has(String(p.studentId)));
 
     // حذف الطلاب المرتبطين بالمجموعة
     for (const s of studentsInGroup) {
         await StorageEngine.delete('students', s.id).catch(() => {});
+        if (typeof CloudSync !== 'undefined' && CloudSync.deleteRecord) {
+            CloudSync.deleteRecord('students', s.id);
+        }
     }
-    db.students = db.students.filter(s => s.groupId != id);
+    db.students = db.students.filter(s => String(s.groupId) !== String(id));
 
     // حذف المجموعة نفسها
-    db.groups = db.groups.filter(g => g.id != id);
+    db.groups = db.groups.filter(g => String(g.id) !== String(id));
     await StorageEngine.delete('groups', id);
+    if (typeof CloudSync !== 'undefined' && CloudSync.deleteRecord) {
+        CloudSync.deleteRecord('groups', id);
+    }
 
     // حفظ كل الجداول المتأثرة
     await db.save('groups');
@@ -2587,9 +2599,17 @@ async function deleteGroup(id) {
     await db.save('attendance');
     await db.save('payments');
 
+    if (typeof currentGroupId !== 'undefined' && String(currentGroupId) === String(id)) {
+        currentGroupId = null;
+    }
+    if (typeof activeGroupDetailId !== 'undefined' && String(activeGroupDetailId) === String(id)) {
+        activeGroupDetailId = null;
+        showSection('groups-section');
+    }
+
     showNotification(`✅ تم حذف المجموعة "${group.name}" وكل بياناتها بنجاح`, 'success');
     renderGroups();
-    refreshGroupContexts();
+    if (typeof refreshGroupContexts === 'function') refreshGroupContexts();
 }
 
 

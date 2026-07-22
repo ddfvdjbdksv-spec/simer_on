@@ -1,7 +1,7 @@
 {
-  "name": "نظام إدارة الدروس",
-  "short_name": "نظام إدارة الدروس",
-  "description": "نظام إدارة الدروس المتكامل",
+  "name": "سنتر العباقرة",
+  "short_name": "العباقرة",
+  "description": "نظام سنتر العباقرة المتكامل",
   "start_url": "./",
   "display": "standalone",
   "orientation": "any",
@@ -46,14 +46,22 @@
       "label": "الصفحة الرئيسية"
     }
   ],
-  "categories": ["education", "productivity"],
+  "categories": [
+    "education",
+    "productivity"
+  ],
   "shortcuts": [
     {
       "name": "تسجيل الحضور",
       "short_name": "الحضور",
       "description": "فتح نظام تسجيل الحضور مباشرة",
       "url": "./#attendance",
-      "icons": [{ "src": "./app-icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "./app-icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
   ]
 }
