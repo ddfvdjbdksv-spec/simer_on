@@ -48,7 +48,7 @@ const CloudSync = (() => {
         'platformCourses', 'platformSubscriptions'
     ];
 
-    const HASH_STORAGE_KEY = 'cloud_sync_hashes_v2'; // v2: تصحيح باگ كان بيسجّل "تمت المزامنة" قبل التأكد فعليًا
+    const HASH_STORAGE_KEY = 'cloud_sync_hashes_' + FIREBASE_CONFIG.projectId;
 
     let fsDB = null;
     let ready = false;
@@ -532,6 +532,43 @@ const CloudSync = (() => {
         attachSettingsListener();
     }
 
+    async function pullAllFromCloudInitial() {
+        applyingRemote = true;
+        try {
+            for (const table of SYNC_TABLES) {
+                const snap = await fsDB.collection(table).get();
+                const remoteArr = [];
+                snap.forEach(doc => {
+                    const rawId = doc.id;
+                    const numericId = isNaN(Number(rawId)) ? rawId : Number(rawId);
+                    const data = { ...doc.data(), id: numericId };
+                    delete data._syncedAt;
+                    remoteArr.push(data);
+                });
+
+                if (remoteArr.length > 0) {
+                    await mergeRemoteTable(table, remoteArr);
+                }
+            }
+
+            const settingsDoc = await fsDB.collection('meta').doc('settings').get();
+            if (settingsDoc.exists) {
+                const remoteSettings = { ...settingsDoc.data() };
+                delete remoteSettings._syncedAt;
+                db._settings = { ...db._settings, ...remoteSettings };
+                try { localStorage.setItem('edu_master_settings', JSON.stringify(db._settings)); } catch (e) {}
+                hashes.__settings = hashOf(db._settings);
+            }
+            saveHashes();
+            isFreshSync = false;
+        } catch (e) {
+            console.warn('[CloudSync] pullAllFromCloudInitial warning:', e);
+        } finally {
+            applyingRemote = false;
+            queueTableUIRefresh(null);
+        }
+    }
+
     // ============================================================
     //  التهيئة
     // ============================================================
@@ -544,25 +581,21 @@ const CloudSync = (() => {
         }
 
         loadHashes();
-        console.log('[CloudSync] بدء التهيئة...');
+        console.log('[CloudSync] بدء التهيئة لمشروع:', FIREBASE_CONFIG.projectId);
 
         try {
             firebase.initializeApp(FIREBASE_CONFIG);
             fsDB = firebase.firestore();
 
-            // تفعيل الـ Persistence الخاصة بـ Firestore نفسها: بتخلّي أي
-            // كتابة بنعملها "تتصف" فورًا محليًا وتتزامن تلقائيًا مع رجوع
-            // النت حتى لو اتقفل المتصفح بالكامل في الأثناء (زي واتساب تمامًا)
+            // تفعيل الـ Persistence الخاصة بـ Firestore نفسها
             try {
                 await fsDB.enablePersistence({ synchronizeTabs: true });
                 console.log('[CloudSync] ✅ Offline persistence مُفعَّلة');
             } catch (e) {
-                // لو فاتح أكتر من تاب أو المتصفح مش بيدعمها — نكمّل عادي
                 console.warn('[CloudSync] ⚠️ Firestore persistence لم تُفعَّل:', e.code || e.message);
             }
 
             ready = true;
-            // لو window.db هو كائن البيانات المحلية (db من app.js)، نحتفظ بـ fsDB على window._firestoreDB
             window._firestoreDB = fsDB;
             console.log('[CloudSync] ✅ الاتصال جاهز، مشروع Firebase:', FIREBASE_CONFIG.projectId);
             setStatus(navigator.onLine ? 'syncing' : 'offline');
@@ -572,8 +605,13 @@ const CloudSync = (() => {
             window.addEventListener('online', () => { console.log('[CloudSync] رجع النت — إعادة مزامنة'); setStatus('syncing'); pushAllTables(); });
             window.addEventListener('offline', () => setStatus('offline'));
 
-            // أول تشغيل: ادفع أي بيانات محلية سابقة (قبل تفعيل المزامنة) لأعلى
-            pushAllTables();
+            // عند الاتصال بمشروع جديد أو أول تشغيل: جلب ودمج كامل لجميع سجلات مشروع Firebase أولاً
+            if (isFreshSync) {
+                console.log('[CloudSync] 🔄 اتصال بمشروع جديد (' + FIREBASE_CONFIG.projectId + ') — تنزيل ودمج كل بيانات السحابة...');
+                await pullAllFromCloudInitial();
+            } else {
+                pushAllTables();
+            }
 
             setTimeout(() => setStatus(navigator.onLine ? 'online' : 'offline'), 2500);
         } catch (err) {
