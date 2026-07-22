@@ -111,6 +111,13 @@
                         style="color: #16a34a; font-weight: 700; display: none; margin-bottom: 1rem;">
                         <i class="fas fa-check-circle"></i> تم تسجيل الدخول بنجاح!
                     </div>
+
+                    <!-- دخول السكرتارية المباشر: يظهر تلقائيًا لو فيه حسابات سكرتير
+                         مُضافة من "أنظمة الدخول"، بدون الحاجة لأي كلمة مرور عامة أولاً -->
+                    <div id="splash-secretary-quick-select" style="display:none; margin-top: 1.5rem; padding-top: 1.3rem; border-top: 1px solid rgba(0,0,0,0.08);">
+                        <p style="color: var(--text-muted); margin-bottom: .9rem; font-size: 1rem;">أو اختر اسمك لتسجيل الدخول كسكرتير:</p>
+                        <div id="splash-secretary-list" style="max-height: 220px; overflow-y: auto; padding: 0 .5rem;"></div>
+                    </div>
                 </div>
 
                 <div id="employee-select-screen" style="display: none;">
@@ -187,6 +194,12 @@
                         <span>متابعة الغياب اليومي</span>
                     </a>
                 </li>
+                <li class="nav-item" data-rbac="admin">
+                    <a href="#" class="nav-link" id="nav-login-systems" onclick="openEmployeeManagement(); return false;">
+                        <i class="fas fa-user-shield" style="color:var(--primary)"></i>
+                        <span>أنظمة الدخول</span>
+                    </a>
+                </li>
                 <li class="nav-item" data-rbac="all">
                     <a href="#" class="nav-link" onclick="showSection('exams', this)">
                         <i class="fas fa-file-invoice"></i>
@@ -254,18 +267,7 @@
                         <span>طباعة الأكواد</span>
                     </a>
                 </li>
-                <li class="nav-item" data-rbac="admin">
-                    <a href="#" class="nav-link" id="nav-platform-codes" onclick="showSection('platform-codes', this)">
-                        <i class="fas fa-ticket-alt" style="color:var(--accent)"></i>
-                        <span>أكواد المنصة</span>
-                    </a>
-                </li>
-                <li class="nav-item" data-rbac="admin">
-                    <a href="#" class="nav-link" id="nav-platform-activation" onclick="showSection('platform-activation', this)">
-                        <i class="fas fa-graduation-cap" style="color:#8b5cf6"></i>
-                        <span>تفعيل كورسات المنصة</span>
-                    </a>
-                </li>
+
                 <li class="nav-item" data-rbac="all" style="margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
                     <button class="btn btn-primary" onclick="enterPortalMode()"
                         style="width: 100%; border-radius: 12px; height: 50px;">
@@ -1298,13 +1300,7 @@
                     <div class="card-value" id="finance-income-lesson" style="color: #2563eb;">0 ج.م</div>
                     <small style="display:block; margin-top:0.4rem; color:var(--text-muted);">مجموع اشتراكات الدرس</small>
                 </div>
-                <div class="card" style="border-right: 4px solid #7c3aed;">
-                    <div class="card-title">اشتراكات المنصة <i class="fas fa-laptop-code"
-                            style="color:#7c3aed"></i>
-                    </div>
-                    <div class="card-value" id="finance-income-platform" style="color: #7c3aed;">0 ج.م</div>
-                    <small style="display:block; margin-top:0.4rem; color:var(--text-muted);">دفع المنصة + الاثنين معاً</small>
-                </div>
+
                 <div class="card">
                     <div class="card-title">المقبوضات السنوية <i class="fas fa-chart-line"
                             style="color:var(--primary)"></i>
@@ -1342,41 +1338,13 @@
                         <input type="number" id="monthly-fee-input" class="form-input" style="margin-bottom: 0;"
                             placeholder="مثلاً: 100">
                     </div>
-                    <div id="platform-fee-input-wrapper" style="flex: 1; min-width: 180px; display:none; display: flex; flex-direction: column; gap: 0.5rem;">
-                        <div>
-                            <label style="display: block; margin-bottom: 0.3rem; font-weight: 700; color:#7c3aed;">سعر المنصة الأصلي:</label>
-                            <div id="platform-original-fee-display" style="padding: 0.6rem 1rem; background: #f3f4f6; border: 2px solid #d1d5db; border-radius: 8px; font-weight: 700; color: #4b5563; min-height: 42px; display:flex; align-items:center; gap:0.5rem;">
-                                <i class="fas fa-tag"></i>
-                                <span id="platform-original-fee-value">اختر كورساً أولاً</span>
-                            </div>
-                        </div>
-                        <div>
-                            <label style="display: block; margin-bottom: 0.3rem; font-weight: 700; color:#7c3aed;">سعر طلاب السيستم (ج.م):</label>
-                            <input type="number" id="platform-system-fee-input" class="form-input" style="margin-bottom: 0; min-height: 42px;" placeholder="مثلاً: 200">
-                        </div>
-                        <input type="hidden" id="platform-fee-input" value="0">
-                    </div>
+
                     <div style="flex: 1; min-width: 150px;">
                         <label style="display: block; margin-bottom: 0.5rem; font-weight: 700;">نسبة السنتر (%):</label>
                         <input type="number" id="center-commission-input" class="form-input" style="margin-bottom: 0;"
                             placeholder="مثلاً: 10">
                     </div>
-                    <div style="flex: 1; min-width: 180px;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 700;">نوع الاشتراك:</label>
-                        <select id="cycle-subscription-type" class="form-input" style="margin-bottom: 0;"
-                            onchange="onCycleSubscriptionTypeChange()">
-                            <option value="lesson">اشتراك الدرس</option>
-                            <option value="platform">اشتراك المنصة</option>
-                            <option value="both">اشتراك الدرس + المنصة</option>
-                        </select>
-                    </div>
-                    <div id="cycle-platform-course-wrapper" style="flex: 1; min-width: 200px; display:none;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 700;">كورس المنصة المطلوب:</label>
-                        <select id="cycle-platform-course" class="form-input" style="margin-bottom: 0;"
-                            onchange="onPlatformCourseSelected(this)">
-                            <option value="">-- اختر الكورس --</option>
-                        </select>
-                    </div>
+
                     <button id="btn-start-monthly" class="btn btn-primary" style="background: var(--accent);"
                         onclick="startMonthlySubscription()">
                         <i class="fas fa-play"></i> بدء الاشتراك
@@ -2087,145 +2055,7 @@
             </div>
         </section>
 
-        <section id="platform-codes-section" style="display:none;" class="fade-in">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap;">
-                <div>
-                    <h2 style="font-size:1.6rem; margin-bottom:0.4rem;">أكواد المنصة</h2>
-                    <p style="color:var(--text-muted);">عرض أكواد الكورسات المحفوظة محلياً حسب الصف والكورس للطباعة ككروت صغيرة. (المزامنة السحابية أُلغيت)</p>
-                </div>
-                <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
-                    <button class="btn" onclick="showReceivedPlatformCourses()" id="btn-view-received-courses"
-                        style="height:48px; border-radius:12px; background:var(--bg-light); border:1px solid var(--border);">
-                        <i class="fas fa-book-reader"></i> عرض الكورسات المستلمة
-                    </button>
-                    <button class="btn btn-primary" onclick="syncWithPlatform()" id="btn-sync-platform"
-                        style="height:48px; border-radius:12px; background:var(--primary);">
-                        <i class="fas fa-sync-alt"></i> مزامنة مع المنصة
-                        <span id="platform-sync-pending-badge" class="status-badge"
-                            style="display:none; background:#fee2e2; color:#991b1b; margin-right:6px; font-size:0.75rem;"></span>
-                    </button>
-                    <!-- زر مخفي يحتاجه platform-subscriptions.js للإدراج الديناميكي -->
-                    <span id="btn-import-platform-codes" style="display:none;"></span>
-                    <span id="btn-refresh-platform-courses" style="display:none;"></span>
-                </div>
-            </div>
 
-            <div class="data-table-container" style="margin-bottom:1.5rem;">
-                <div style="display:grid; grid-template-columns:repeat(4, minmax(180px, 1fr)); gap:1rem; align-items:end;">
-                    <div class="form-group">
-                        <label>الصف الدراسي</label>
-                        <select id="platform-codes-grade" class="form-input" onchange="renderPlatformCodesSection()"></select>
-                    </div>
-                    <div class="form-group">
-                        <label>الكورس</label>
-                        <select id="platform-codes-course" class="form-input" onchange="renderPlatformCodesSection()"></select>
-                    </div>
-                    <div class="form-group">
-                        <label>بحث باسم الطالب أو الكود</label>
-                        <input id="platform-codes-search" class="form-input" oninput="renderPlatformCodesSection()" placeholder="اكتب للبحث...">
-                    </div>
-                    <button class="btn btn-primary" onclick="printPlatformCourseCards()" style="height:48px; border-radius:12px;">
-                        <i class="fas fa-print"></i> طباعة الكروت
-                    </button>
-                </div>
-            </div>
-
-            <div class="stats-grid" style="grid-template-columns:repeat(3, 1fr); margin-bottom:1.5rem;">
-                <div class="card"><div class="card-title">إجمالي الأكواد</div><div class="card-value" id="platform-codes-total">0</div></div>
-                <div class="card"><div class="card-title">أكواد الصف الحالي</div><div class="card-value" id="platform-codes-grade-count">0</div></div>
-                <div class="card"><div class="card-title">أكواد الكورس المختار</div><div class="card-value" id="platform-codes-course-count">0</div></div>
-            </div>
-
-            <div class="data-table-container">
-                <table style="width:100%;">
-                    <thead>
-                        <tr>
-                            <th>الطالب</th>
-                            <th>الصف</th>
-                            <th>الكورس</th>
-                            <th>الكود</th>
-                            <th>الحالة</th>
-                        </tr>
-                    </thead>
-                    <tbody id="platform-codes-list"></tbody>
-                </table>
-            </div>
-        </section>
-
-        <section id="platform-activation-section" style="display:none;" class="fade-in">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap;">
-                <div>
-                    <h2 style="font-size:1.6rem; margin-bottom:0.4rem;"><i class="fas fa-graduation-cap" style="color:#8b5cf6"></i> تفعيل كورسات المنصة</h2>
-                    <p style="color:var(--text-muted);">تفعيل الكورسات للطلاب بشكل مباشر (يدوي أو جماعي) وتلقائي المزامنة مع المنصة.</p>
-                </div>
-                <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
-                    <button class="btn btn-primary" onclick="syncPendingPlatformSubscriptions()" id="btn-sync-activation"
-                        style="height:48px; border-radius:12px; background:#8b5cf6; border:none; box-shadow:0 4px 14px -2px rgba(139,92,246,0.35);">
-                        <i class="fas fa-sync-alt"></i> مزامنة الاشتراكات المعلقة
-                    </button>
-                </div>
-            </div>
-
-            <div class="data-table-container" style="margin-bottom:1.5rem;">
-                <div style="display:grid; grid-template-columns:repeat(3, minmax(200px, 1fr)); gap:1rem; align-items:end;">
-                    <div class="form-group">
-                        <label style="font-weight:700;">1. اختر كورس المنصة</label>
-                        <select id="platform-activation-course" class="form-input" style="margin-bottom: 0;" onchange="renderPlatformActivationList()">
-                            <option value="">-- اختر الكورس --</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label style="font-weight:700;">2. اختر الصف الدراسي</label>
-                        <select id="platform-activation-grade" class="form-input" style="margin-bottom: 0;" onchange="renderPlatformActivationList()">
-                            <option value="">-- اختر الصف --</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label style="font-weight:700;">3. بحث باسم الطالب أو الكود</label>
-                        <input id="platform-activation-search" class="form-input" style="margin-bottom: 0;" oninput="renderPlatformActivationList()" placeholder="بحث باسم الطالب أو الكود...">
-                    </div>
-                </div>
-            </div>
-
-            <div class="data-table-container" id="platform-activation-table-wrapper" style="display:none;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:10px;">
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <input type="checkbox" id="platform-activation-select-all" onchange="toggleSelectAllActivation(this)" style="transform: scale(1.2); cursor: pointer;">
-                        <label for="platform-activation-select-all" style="font-weight:700; cursor:pointer; margin:0;">تحديد جميع الطلاب في هذه الصفحة</label>
-                    </div>
-                    <button class="btn btn-primary" onclick="batchActivateSelected()" style="background:#10b981; border:none; box-shadow:0 4px 12px rgba(16,185,129,0.2);">
-                        <i class="fas fa-check-double"></i> تفعيل الكورس للطلاب المحددين
-                    </button>
-                </div>
-
-                <div style="overflow-x:auto;">
-                    <table style="width:100%;">
-                        <thead>
-                            <tr>
-                                <th style="width: 40px; text-align: center;">#</th>
-                                <th>الاسم</th>
-                                <th>الكود</th>
-                                <th>الصف الدراسي</th>
-                                <th>حالة التفعيل للكورس المختار</th>
-                                <th>إجراء</th>
-                            </tr>
-                        </thead>
-                        <tbody id="platform-activation-list"></tbody>
-                    </table>
-                </div>
-                
-                <div id="activation-pagination" style="display:flex; justify-content:center; align-items:center; gap:15px; margin-top:1.5rem;">
-                    <button class="btn" id="btn-activation-prev" onclick="changeActivationPage(-1)" style="background:var(--bg-light); border:1px solid var(--border);"><i class="fas fa-chevron-right"></i> السابق</button>
-                    <span id="activation-page-info" style="font-weight:700;">صفحة 1</span>
-                    <button class="btn" id="btn-activation-next" onclick="changeActivationPage(1)" style="background:var(--bg-light); border:1px solid var(--border);">التالي <i class="fas fa-chevron-left"></i></button>
-                </div>
-            </div>
-            
-            <div id="platform-activation-welcome-message" style="text-align:center; padding:4rem 2rem; color:var(--text-muted);">
-                <i class="fas fa-graduation-cap" style="font-size:4rem; color:#8b5cf6; margin-bottom:1rem; opacity:0.3; display:block;"></i>
-                يرجى اختيار كورس المنصة والصف الدراسي لعرض قائمة الطلاب وتفعيل الكورس لهم.
-            </div>
-        </section>
 
         <style>
             .radar-wave {
@@ -2702,27 +2532,6 @@
         </div>
     </div>
 
-    <!-- Platform Course Selection Modal -->
-    <div id="platform-course-select-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-content" style="max-width: 520px; border-radius: 24px;">
-            <button class="modal-close-btn" onclick="toggleModal('platform-course-select-modal', false)">
-                <i class="fas fa-times"></i>
-            </button>
-            <h3 style="margin-bottom:0.5rem; text-align:center;"><i class="fas fa-laptop-code"></i> اختر كورسات المنصة</h3>
-            <p style="text-align:center; color:var(--text-muted); font-size:0.85rem; margin-bottom:1rem;">يمكنك اختيار كورس واحد أو أكثر</p>
-            <input id="platform-course-search" class="form-input" placeholder="بحث عن كورس..."
-                oninput="renderPlatformCourseSelectionList()">
-            <div id="platform-course-select-list" style="max-height: 320px; overflow-y:auto; display:flex; flex-direction:column; gap:0.5rem;">
-                <!-- Filled via JS -->
-            </div>
-            <div id="platform-course-confirm-section">
-                <button class="btn btn-primary" style="width:100%; height:50px; border-radius:12px; margin-top:1rem;" onclick="savePlatformCourseSelection()">
-                    <i class="fas fa-check"></i> حفظ
-                </button>
-            </div>
-        </div>
-    </div>
-
 
     <!-- Professional Student Report Modal -->
     <div id="report-modal" class="modal-overlay" style="display: none;">
@@ -2834,12 +2643,68 @@
 
 
 
+    <!-- ===== Student QR Code Modal ===== -->
+    <div id="student-qr-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)toggleModal('student-qr-modal',false)">
+        <div class="modal-content" style="max-width:420px; border-radius:28px; padding:0; overflow:hidden; position:relative;">
+            <!-- Header -->
+            <div style="background:linear-gradient(135deg,var(--primary),#0ea5e9); padding:1.8rem 2rem 1.5rem; text-align:center; position:relative;">
+                <button class="modal-close-btn" onclick="toggleModal('student-qr-modal',false)"
+                    style="position:absolute; top:1rem; left:1rem; background:rgba(255,255,255,0.2); color:white; border:none; border-radius:50%; width:36px; height:36px; font-size:1rem; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+                    <i class="fas fa-times"></i>
+                </button>
+                <div style="width:60px; height:60px; background:rgba(255,255,255,0.2); border-radius:50%; margin:0 auto 0.8rem; display:flex; align-items:center; justify-content:center; font-size:1.8rem;">
+                    <i class="fas fa-qrcode" style="color:white;"></i>
+                </div>
+                <h3 style="color:white; margin:0; font-size:1.3rem;" id="qr-modal-student-name">بطاقة الطالب</h3>
+                <p style="color:rgba(255,255,255,0.8); margin:0.3rem 0 0; font-size:0.85rem;" id="qr-modal-student-info">المجموعة — الهاتف</p>
+            </div>
+
+            <!-- QR Code Body -->
+            <div style="background:white; padding:2rem; text-align:center;">
+                <p style="color:var(--text-muted); font-size:0.85rem; margin:0 0 1.2rem;">
+                    <i class="fas fa-mobile-alt"></i> صوّر الكود بالتليفون لفتح ملف الطالب مباشرة
+                </p>
+                <!-- QR container -->
+                <div id="student-qr-container" style="display:flex; justify-content:center; align-items:center; min-height:200px;">
+                    <div style="color:var(--text-muted);"><i class="fas fa-spinner fa-spin fa-2x"></i></div>
+                </div>
+                <p style="margin:1rem 0 0; font-weight:700; letter-spacing:1px; color:var(--primary); font-size:0.9rem;" id="qr-modal-code-text"></p>
+
+                <!-- WhatsApp Link Sharing Buttons -->
+                <div style="display:flex; justify-content:center; align-items:center; gap:0.75rem; margin-top:1.2rem; flex-wrap:wrap;">
+                    <button onclick="sendStudentQRWhatsApp('student')" title="إرسال رابط التقرير لواتساب الطالب"
+                        style="display:flex; align-items:center; justify-content:center; gap:6px; padding:9px 16px; border-radius:12px; border:none; cursor:pointer; font-family:inherit; font-weight:700; font-size:0.85rem; background:#25D366; color:#fff; box-shadow:0 3px 10px rgba(37,211,102,0.3); flex:1; min-width:140px;">
+                        <i class="fab fa-whatsapp" style="font-size:1.1rem;"></i>
+                        واتساب الطالب
+                    </button>
+
+                    <button onclick="sendStudentQRWhatsApp('parent')" title="إرسال رابط التقرير لواتساب ولي الأمر"
+                        style="display:flex; align-items:center; justify-content:center; gap:6px; padding:9px 16px; border-radius:12px; border:none; cursor:pointer; font-family:inherit; font-weight:700; font-size:0.85rem; background:#eab308; color:#fff; box-shadow:0 3px 10px rgba(234,179,8,0.3); flex:1; min-width:140px;">
+                        <i class="fab fa-whatsapp" style="font-size:1.1rem;"></i>
+                        واتساب ولي الأمر
+                    </button>
+                </div>
+
+                <!-- Action Buttons -->
+                <div style="display:flex; gap:0.8rem; margin-top:1.5rem; flex-wrap:wrap; justify-content:center;">
+                    <button class="btn btn-primary" onclick="printStudentQRCard()" style="flex:1; min-width:120px; font-size:0.9rem;">
+                        <i class="fas fa-print"></i> طباعة البطاقة
+                    </button>
+                    <button class="btn" onclick="downloadStudentQR()" style="flex:1; min-width:120px; background:var(--accent); color:white; font-size:0.9rem;">
+                        <i class="fas fa-download"></i> حفظ الصورة
+                    </button>
+                </div>
+                <button class="btn" onclick="toggleModal('student-qr-modal',false)" style="width:100%; margin-top:0.6rem; background:var(--bg-light);">إغلاق</button>
+            </div>
+        </div>
+    </div>
+
 
     <!-- Password Management Modal -->
     <div id="employee-management-modal" class="modal-overlay" style="display: none;">
         <div class="modal-content" style="max-width: 600px; border-radius: 25px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-                <h3 style="margin: 0;"><i class="fas fa-users-cog" style="color:var(--primary)"></i> إدارة المستخدمين (الموظفين)</h3>
+                <h3 style="margin: 0;"><i class="fas fa-users-cog" style="color:var(--primary)"></i> أنظمة الدخول (حسابات السكرتارية)</h3>
                 <button class="modal-close-btn" onclick="toggleModal('employee-management-modal', false)">
                     <i class="fas fa-times"></i>
                 </button>
@@ -3455,13 +3320,16 @@
         <script src="firebase-app-compat.js"></script>
         <script src="firebase-firestore-compat.js"></script>
         <script src="data.js?v=3" onerror="console.warn('data.js not found - fresh install mode');"></script>
+        <script src="grade-mapping.js"></script>
+        <script src="category-system.js"></script>
         <script src="code-generator.js"></script>
-        <script src="archive_functions.js?v=4"></script>
-        <script src="app.js?v=7"></script>
-        <script src="user-management.js?v=1"></script>
-        <script src="firebase-sync.js?v=2"></script>
-        <script src="platform-subscriptions.js?v=3"></script>
-        <script src="transfer-student.js?v=1"></script>
+        <script src="archive_functions.js?v=5"></script>
+        <script src="app.js?v=8"></script>
+        <script src="user-management.js?v=2"></script>
+        <script src="firebase-sync.js?v=3"></script>
+        <script src="pending-operations-display.js"></script>
+        <script src="platform-subscriptions.js?v=2"></script>
+        <script src="transfer-student.js?v=2"></script>
         <script>
     // ============================================================
     //  نظام التحديث التلقائي للتطبيق — النسخة المحسّنة

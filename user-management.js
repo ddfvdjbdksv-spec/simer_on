@@ -41,7 +41,9 @@ const EmployeeAuth = (() => {
         try {
             localStorage.setItem('edu_master_settings', JSON.stringify(db._settings));
         } catch (e) { console.warn('[EmployeeAuth] failed to persist settings', e); }
-        // محاولة أفضل جهد لحفظها أيضاً داخل IndexedDB في الخلفية دون انتظار
+        if (typeof CloudSync !== 'undefined' && CloudSync.isReady && CloudSync.isReady()) {
+            try { CloudSync.onLocalSave(null); } catch (e) {}
+        }
         if (typeof db.save === 'function') {
             db.save('shifts').catch(() => {});
         }
@@ -147,11 +149,19 @@ window.EmployeeAuth = EmployeeAuth;
 // يُستدعى من app.js بعد نجاح checkAppPassword، بدلاً من الانتقال
 // مباشرة لشاشة التحميل. لو مفيش مستخدمين مُعرَّفين، يكمل تلقائياً.
 function proceedAfterPasswordSuccess(role) {
+    // ✅ المشرف يدخل مباشرة دائمًا — لا داعي لعرض شاشة "من أنت؟" له؛
+    // شاشة اختيار السكرتير مخصصة فقط لدخول السكرتارية، وليست خطوة
+    // إضافية إجبارية بعد كلمة مرور المشرف.
+    if (role === 'admin') {
+        finishLoginFlow(role);
+        return;
+    }
+
     const employees = EmployeeAuth.list(false); // النشطون فقط
 
     if (!employees.length) {
         // لا يوجد نظام مستخدمين مُفعَّل بعد — كمّل بالسلوك القديم تمامًا
-        EmployeeAuth.setCurrentGeneric(role === 'admin' ? 'المشرف' : 'الموظف');
+        EmployeeAuth.setCurrentGeneric('الموظف');
         finishLoginFlow(role);
         return;
     }
@@ -187,6 +197,34 @@ function renderEmployeeSelectScreen(employees, role) {
     }
 }
 
+// ============================================================
+//  شاشة الدخول الرئيسية: عرض السكرتارية مباشرة بجانب كلمة مرور
+//  المشرف، بدون الحاجة لإدخال أي كلمة مرور عامة أولاً.
+//  كل سكرتير يضغط اسمه ويدخل كلمة مروره الخاصة به مباشرة.
+// ============================================================
+function renderSplashSecretaryQuickSelect() {
+    const wrap = document.getElementById('splash-secretary-quick-select');
+    const list = document.getElementById('splash-secretary-list');
+    if (!wrap || !list) return;
+
+    const employees = EmployeeAuth.list(false); // النشطون فقط
+    if (!employees.length) {
+        wrap.style.display = 'none';
+        list.innerHTML = '';
+        return;
+    }
+
+    list.innerHTML = employees.map(emp => `
+        <button type="button" class="btn settings-choice employee-pick-btn"
+            style="width:100%; text-align:right; margin-bottom:.6rem; padding:.85rem 1.1rem; border-radius:14px;"
+            onclick="openEmployeePinPrompt('${emp.id}', 'employee')">
+            <i class="fas fa-user-circle"></i> ${emp.name}
+        </button>
+    `).join('');
+    wrap.style.display = 'block';
+}
+window.renderSplashSecretaryQuickSelect = renderSplashSecretaryQuickSelect;
+
 // كل مستخدم له كلمة مرور خاصة به لتأكيد الهوية قبل الدخول
 function openEmployeePinPrompt(employeeId, role) {
     const emp = EmployeeAuth.getById(employeeId);
@@ -198,7 +236,13 @@ function openEmployeePinPrompt(employeeId, role) {
         return;
     }
     EmployeeAuth.setCurrent(employeeId);
-    finishLoginFlow(role);
+    // ✅ يضمن ضبط دور RBAC كموظف حتى لو تم الدخول مباشرة من قائمة
+    // السكرتارية على الشاشة الرئيسية (بدون المرور بكلمة مرور المشرف/الموظف العامة)
+    if (typeof RBAC !== 'undefined' && RBAC.login) {
+        RBAC.login('employee');
+        RBAC.log('login', 'employee');
+    }
+    finishLoginFlow(role || 'employee');
 }
 
 // ============================================================
@@ -206,6 +250,12 @@ function openEmployeePinPrompt(employeeId, role) {
 // ============================================================
 
 function openEmployeeManagement() {
+    if (typeof RBAC !== 'undefined' && RBAC.isAdmin && !RBAC.isAdmin()) {
+        if (typeof showNotification === 'function') {
+            showNotification('⛔ هذه الخانة مخصّصة للمشرف فقط.', 'error');
+        }
+        return;
+    }
     renderEmployeeManagementList();
     toggleModal('employee-management-modal', true);
 }

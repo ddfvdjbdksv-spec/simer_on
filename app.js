@@ -2234,10 +2234,11 @@ async function renderStudents() {
             <td>
                 <div style="display:flex; gap:5px;">
                     <button class="btn" title="طباعة الكارت" style="padding:5px 10px; background:var(--primary); color:white;" onclick="generatePrintCard(${s.id})"><i class="fas fa-barcode"></i></button>
+                    <button class="btn" title="QR Code الطالب" style="padding:5px 10px; background:#7c3aed; color:white;" onclick="showStudentQR(${s.id})"><i class="fas fa-qrcode"></i></button>
                     <button class="btn" title="تقرير شامل" style="padding:5px 10px; background:#3b82f6; color:white;" onclick="generateMonthlyReport(${s.id})"><i class="fas fa-file-invoice"></i></button>
                     <button class="btn" title="الملف الشخصي" style="padding:5px 10px;" onclick="viewDetailedProfile(${s.id})"><i class="fas fa-user-graduate"></i></button>
                     <button class="btn" title="تعديل" style="padding:5px 10px; background:var(--accent); color:white;" onclick="editStudent(${s.id})"><i class="fas fa-edit"></i></button>
-                    <button class="btn" title="حذف" style="padding:5px 10px; color:var(--danger);" onclick="deleteStudent(${s.id})"><i class="fas fa-trash"></i></button>
+                    <button class="btn" title="حذف" style="padding:5px 10px; color:var(--danger);" onclick="deleteStudent('${s.id}')"><i class="fas fa-trash"></i></button>
                 </div>
             </td>
         </tr>`).join('');
@@ -2346,10 +2347,10 @@ function renderGroups() {
             <td><span class="badge" style="background:var(--primary); color:white">${db.students.filter(s => s.groupId == g.id).length} طالب</span></td>
             <td>
                 <div style="display:flex; gap:10px;">
-                    <button class="btn btn-primary" style="padding: 5px 15px; background: var(--accent);" onclick="viewGroupDetails(${g.id})">
+                    <button class="btn btn-primary" style="padding: 5px 15px; background: var(--accent);" onclick="viewGroupDetails('${g.id}')">
                         <i class="fas fa-eye"></i> عرض المجموعة
                     </button>
-                    <button class="btn" style="color:var(--danger)" onclick="deleteGroup(${g.id})">
+                    <button class="btn" style="color:var(--danger)" onclick="deleteGroup('${g.id}')">
                         <i class="fas fa-trash"></i>
                     </button>
 
@@ -2535,12 +2536,60 @@ async function removeStudentFromGroup(studentId) {
 
 async function deleteGroup(id) {
     if (!rbacGuardDelete('حذف المجموعة')) return;
-    if (!confirm('سيتم حذف المجموعة نهائياً. هل أنت متأكد من الاستمرار؟')) return;
+
+    const group = db.groups.find(g => g.id == id);
+    if (!group) return;
+
+    const studentsInGroup = db.students.filter(s => s.groupId == id);
+    const studentsCount   = studentsInGroup.length;
+    const attendanceCount = db.attendance.filter(a => a.groupId == id).length;
+    const paymentsCount   = db.payments.filter(p => studentsInGroup.some(s => s.id == p.studentId)).length;
+
+    // رسالة تأكيد تفصيلية
+    let confirmMsg = `⚠️ حذف المجموعة: "${group.name}"\n\n`;
+    confirmMsg += `سيتم حذف:\n`;
+    confirmMsg += `• المجموعة نفسها\n`;
+    if (studentsCount  > 0) confirmMsg += `• ${studentsCount} طالب مرتبط بالمجموعة\n`;
+    if (attendanceCount > 0) confirmMsg += `• ${attendanceCount} سجل حضور\n`;
+    if (paymentsCount  > 0) confirmMsg += `• ${paymentsCount} عملية دفع مرتبطة بطلاب المجموعة\n`;
+    confirmMsg += `\nهذا الإجراء لا يمكن التراجع عنه!\nهل أنت متأكد؟`;
+
+    if (!confirm(confirmMsg)) return;
+
+    // حذف الحضور المرتبط بالمجموعة
+    const attendanceToDelete = db.attendance.filter(a => a.groupId == id);
+    for (const a of attendanceToDelete) {
+        await StorageEngine.delete('attendance', a.id).catch(() => {});
+    }
+    db.attendance = db.attendance.filter(a => a.groupId != id);
+
+    // حذف المدفوعات المرتبطة بطلاب هذه المجموعة
+    const studentIds = new Set(studentsInGroup.map(s => s.id));
+    const paymentsToDelete = db.payments.filter(p => studentIds.has(p.studentId));
+    for (const p of paymentsToDelete) {
+        await StorageEngine.delete('payments', p.id).catch(() => {});
+    }
+    db.payments = db.payments.filter(p => !studentIds.has(p.studentId));
+
+    // حذف الطلاب المرتبطين بالمجموعة
+    for (const s of studentsInGroup) {
+        await StorageEngine.delete('students', s.id).catch(() => {});
+    }
+    db.students = db.students.filter(s => s.groupId != id);
+
+    // حذف المجموعة نفسها
     db.groups = db.groups.filter(g => g.id != id);
     await StorageEngine.delete('groups', id);
+
+    // حفظ كل الجداول المتأثرة
     await db.save('groups');
+    await db.save('students');
+    await db.save('attendance');
+    await db.save('payments');
+
+    showNotification(`✅ تم حذف المجموعة "${group.name}" وكل بياناتها بنجاح`, 'success');
     renderGroups();
-    refreshGroupContexts(); // Update all dropdowns
+    refreshGroupContexts();
 }
 
 
@@ -2877,7 +2926,7 @@ function showAbsenceArchive() {
                     <button class="btn btn-primary" style="padding:5px 10px;" onclick="viewAbsenceSessionDetails(${s.id})">
                         <i class="fas fa-eye"></i> التفاصيل
                     </button>
-                    <button class="btn" style="color:var(--danger);" onclick="deleteAbsenceSession(${s.id})">
+                    <button class="btn" style="color:var(--danger);" onclick="deleteAbsenceSession('${s.id}')">
                         <i class="fas fa-trash"></i>
                     </button>
                 </td>
@@ -2914,13 +2963,8 @@ function sendAbsenceWhatsApp(id) {
     const s = db.students.find(x => x.id === id);
     if (!s) return;
 
-    const message = buildFormalParentMessage({
-        noticeType: 'إشعار غياب',
-        bodyLines: [
-            `نحيط سيادتكم علماً بأن الطالب/ـة *${s.name}* لم يحضر/تحضر الحصة الدراسية اليوم الموافق ${new Date().toLocaleDateString('ar-EG')}.`,
-            `نرجو التكرم بمتابعة سبب الغياب، وموافاتنا بأي عذر إن وجد، حرصاً منا على انتظام مستواه/ـا الدراسي.`
-        ]
-    });
+    // ✅ استخدام نص الرسالة من إعدادات البرنامج مع استبدال {StudentName} باسم الطالب
+    const message = buildAbsenceMessageForStudent(s.name);
     const url = `https://wa.me/2${s.parentPhone}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
     showNotification('تم فتح واتساب للإرسال المباشر');
@@ -3493,7 +3537,7 @@ function renderDailyTreasury() {
                     <div style="font-weight:700;">${student ? student.name : 'طالب مجهول'}</div>
                 </td>
                 <td>${group ? group.name : '---'}</td>
-                <td><span class="status-badge" style="background:var(--bg-light); color:var(--text-main)">${p.category}</span></td>
+                <td><span class="status-badge" style="background:var(--bg-light); color:var(--text-main)">${p.category}</span>${p.collectedBy ? `<br><span style="font-size:.72rem; color:var(--text-muted);"><i class="fas fa-user"></i> ${p.collectedBy}</span>` : ''}</td>
                 <td style="text-align:center; font-weight:800; color:var(--accent); font-size:1.1rem;">${p.amount} ج.م</td>
                 <td style="text-align:center; color:var(--text-muted)">${new Date(p.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</td>
             </tr>
@@ -3813,6 +3857,7 @@ function _archiveDateTreasury(dateStr) {
                     studentName: s ? s.name : 'طالب مجهول',
                     category: p.category,
                     amount: p.amount,
+                    collectedBy: p.collectedBy || null,
                     time: new Date(p.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
                 };
             }),
@@ -3988,7 +4033,7 @@ function viewDailyArchive(archiveId) {
     const paymentsRows = payments.map((p, i) => `
         <tr style="${i % 2 === 0 ? 'background:#fafafa;' : ''}">
             <td style="padding:10px 14px; font-weight:700; color:#1e293b;">${p.studentName}</td>
-            <td style="padding:10px 14px; color:#64748b;">${p.category}</td>
+            <td style="padding:10px 14px; color:#64748b;">${p.category}${p.collectedBy ? `<br><span style="font-size:.72rem; color:#94a3b8;">بواسطة: ${p.collectedBy}</span>` : ''}</td>
             <td style="padding:10px 14px; text-align:center; font-weight:800; color:#10b981;">${p.amount} ج.م</td>
             <td style="padding:10px 14px; text-align:center; color:#94a3b8; font-size:0.82rem;">${p.time || '—'}</td>
         </tr>`).join('');
@@ -5317,7 +5362,7 @@ function renderFastHistory() {
                 </td>
                 <td>${new Date(s.id).toLocaleTimeString('ar-EG')}</td>
                 <td>
-                    <button class="btn" style="color:var(--danger); padding:4px;" onclick="deleteScore(${s.id})">
+                    <button class="btn" style="color:var(--danger); padding:4px;" onclick="deleteScore('${s.id}')">
                         <i class="fas fa-trash"></i>
                     </button>
                 </td>
@@ -6154,24 +6199,12 @@ function openSmartCard(studentId) {
                     onclick="recordQuickAction(${s.id}, 'attendance'); openSmartCard(${s.id});">
                     <i class="fas fa-user-check"></i> تسجيل حضور
                 </button>
-                <!-- أزرار دفع الاشتراك الثلاثة المستقلة -->
+                <!-- أزرار دفع الاشتراك -->
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                    <button class="btn btn-payment" style="height: 65px; border-radius: 12px; font-size: 0.88rem; line-height:1.3; background: #16a34a; box-shadow: 0 4px 14px -2px rgba(22,163,74,0.35);"
+                    <button class="btn btn-payment" style="height: 65px; border-radius: 12px; font-size: 0.88rem; line-height:1.3; background: #f97316; box-shadow: 0 4px 14px -2px rgba(249,115,22,0.4);"
                         onclick="payLessonDirect(${s.id})">
                         <i class="fas fa-chalkboard-teacher" style="display:block;font-size:1.2rem;margin-bottom:3px;"></i>
                         دفع اشتراك الدرس
-                    </button>
-                    <button class="btn btn-payment" style="height: 65px; border-radius: 12px; font-size: 0.88rem; line-height:1.3; background: #2563eb; box-shadow: 0 4px 14px -2px rgba(37,99,235,0.35);"
-                        onclick="payPlatformDirect(${s.id})">
-                        <i class="fas fa-laptop-code" style="display:block;font-size:1.2rem;margin-bottom:3px;"></i>
-                        دفع اشتراك المنصة
-                    </button>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px;">
-                    <button class="btn btn-payment" style="height: 65px; border-radius: 12px; font-size: 0.88rem; line-height:1.3; background: linear-gradient(135deg,#7c3aed,#db2777); box-shadow: 0 4px 14px -2px rgba(124,58,237,0.35);"
-                        onclick="payBothDirect(${s.id})">
-                        <i class="fas fa-layer-group" style="display:block;font-size:1.2rem;margin-bottom:3px;"></i>
-                        دفع الاشتراكين معاً
                     </button>
                     <button class="btn btn-payment" style="height: 65px; border-radius: 12px; font-size: 0.88rem; line-height:1.3; background: var(--vibrant-orange);"
                         onclick="recordQuickAction(${s.id}, 'handout'); openSmartCard(${s.id});">
@@ -6477,7 +6510,160 @@ function viewDetailedProfile(id) {
     toggleModal('profile-modal', true);
 }
 
-// --- System Helpers ---
+// ──────────────────────────────────────────────────────────────
+//  QR Code بطاقة الطالب — يفتح ملف الطالب مباشرة عند المسح
+// ──────────────────────────────────────────────────────────────
+let _currentQRStudentId = null;
+
+function showStudentQR(id) {
+    const s = db.students.find(x => x.id === id);
+    if (!s) return;
+    _currentQRStudentId = id;
+
+    const group = db.groups.find(g => g.id == s.groupId);
+
+    // بناء الـ URL الخاص بالطالب: student-report.html في نفس المجلد + ?student=ID
+    const baseDir = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
+    const studentUrl = `${baseDir}student-report.html?student=${id}`;
+
+    // تحديث بيانات الـ Modal
+    document.getElementById('qr-modal-student-name').textContent = s.name;
+    document.getElementById('qr-modal-student-info').textContent =
+        `${group ? group.name : '---'}  •  ${s.phone || '---'}`;
+    document.getElementById('qr-modal-code-text').textContent = studentUrl.length > 60
+        ? studentUrl.slice(0, 57) + '...' : studentUrl;
+
+    // تنظيف QR container وإعادة الرسم
+    const container = document.getElementById('student-qr-container');
+    container.innerHTML = '<div style="color:var(--text-muted);"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+
+    toggleModal('student-qr-modal', true);
+
+    // رسم الـ QR Code بعد فتح الـ Modal
+    setTimeout(() => {
+        container.innerHTML = '';
+        if (typeof QRCode !== 'undefined') {
+            new QRCode(container, {
+                text: studentUrl,
+                width: 200,
+                height: 200,
+                colorDark: '#1e293b',
+                colorLight: '#ffffff',
+                correctLevel: QRCode.CorrectLevel.H
+            });
+        } else {
+            // Fallback: QR عبر Google Charts API
+            const img = document.createElement('img');
+            img.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(studentUrl)}&color=1e293b&bgcolor=ffffff&qzone=1`;
+            img.alt = 'QR Code';
+            img.style = 'width:200px; height:200px; border-radius:8px;';
+            container.appendChild(img);
+        }
+    }, 150);
+}
+
+function printStudentQRCard() {
+    const s = db.students.find(x => x.id === _currentQRStudentId);
+    if (!s) return;
+
+    const group = db.groups.find(g => g.id == s.groupId);
+    const baseDir = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
+    const studentUrl = `${baseDir}student-report.html?student=${s.id}`;
+    const qrImgSrc = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(studentUrl)}&color=1e293b&bgcolor=ffffff&qzone=2`;
+
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html dir="rtl"><head>
+        <meta charset="UTF-8">
+        <title>بطاقة QR - ${s.name}</title>
+        <style>
+            * { margin:0; padding:0; box-sizing:border-box; }
+            body { font-family: 'Segoe UI', Tahoma, sans-serif; background:#f1f5f9; display:flex; justify-content:center; align-items:center; min-height:100vh; }
+            .card { background:white; border-radius:20px; overflow:hidden; box-shadow:0 8px 30px rgba(0,0,0,0.12); width:320px; }
+            .card-header { background:linear-gradient(135deg,#0f4c81,#0ea5e9); color:white; padding:1.5rem; text-align:center; }
+            .card-header h2 { font-size:1.2rem; margin-bottom:0.2rem; }
+            .card-header p { opacity:.85; font-size:0.8rem; }
+            .card-body { padding:1.5rem; text-align:center; }
+            .card-body img { border-radius:12px; border:3px solid #e2e8f0; }
+            .student-url { font-size:0.65rem; color:#64748b; margin-top:0.8rem; word-break:break-all; direction:ltr; }
+            .group-badge { display:inline-block; background:#f1f5f9; border-radius:20px; padding:0.3rem 0.8rem; font-size:0.8rem; color:#0f4c81; font-weight:700; margin-top:0.6rem; }
+            @media print { body { background:white; } .card { box-shadow:none; } }
+        </style>
+    </head><body>
+        <div class="card">
+            <div class="card-header">
+                <h2>${s.name}</h2>
+                <p>بطاقة الطالب الرقمية</p>
+            </div>
+            <div class="card-body">
+                <img src="${qrImgSrc}" width="200" height="200" alt="QR Code">
+                <div class="group-badge">📚 ${group ? group.name : '---'}</div>
+                <p class="student-url">${studentUrl}</p>
+                <p style="font-size:0.75rem; color:#94a3b8; margin-top:0.5rem;">امسح الكود لفتح ملف الطالب</p>
+            </div>
+        </div>
+        <script>window.onload = () => setTimeout(() => window.print(), 500);<\/script>
+    </body></html>`);
+    win.document.close();
+}
+
+function downloadStudentQR() {
+    const s = db.students.find(x => x.id === _currentQRStudentId);
+    if (!s) return;
+
+    const baseUrl = window.location.origin + window.location.pathname;
+    const studentUrl = `${baseUrl}?student=${s.id}`;
+    const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(studentUrl)}&color=1e293b&bgcolor=ffffff&qzone=2`;
+
+    const a = document.createElement('a');
+    a.href = qrApiUrl;
+    a.download = `QR_${s.name.replace(/\s+/g, '_')}.png`;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showNotification('📥 جاري تحميل QR Code...', 'info');
+}
+
+function sendStudentQRWhatsApp(type) {
+    const s = db.students.find(x => x.id === _currentQRStudentId);
+    if (!s) return showNotification('لم يتم العثور على بيانات الطالب', 'error');
+
+    const phone = type === 'parent' ? (s.parentPhone || s.phone) : s.phone;
+    const recipientLabel = type === 'parent' ? 'ولي الأمر' : 'الطالب';
+
+    if (!phone) {
+        return showNotification(`رقم ${recipientLabel} غير مسجل لهذا الطالب`, 'warning');
+    }
+
+    const baseDir = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
+    const studentUrl = `${baseDir}student-report.html?student=${s.id}`;
+
+    const profile = typeof getProgramProfile === 'function' ? getProgramProfile() : {};
+    const teacherName = typeof getTeacherDisplayName === 'function' ? getTeacherDisplayName() : 'أستاذ المادة';
+    const spec = profile.specialization || 'أستاذ الرياضيات';
+
+    let msg = '';
+    if (typeof buildFormalParentMessage === 'function') {
+        msg = buildFormalParentMessage({
+            noticeType: `رابط التقرير المباشر للطالب/ـة ${s.name}`,
+            bodyLines: [
+`رابط التقرير الشخصي المباشر لمتابعة الحضور والغياب ودرجات الامتحانات والاشتراكات:
+
+📌 ${studentUrl}`
+            ]
+        });
+    } else {
+        msg = `السلام عليكم ورحمة الله وبركاته،\n\nرابط التقرير الشخصي المباشر للطالب/ـة: *${s.name}*\n${studentUrl}`;
+    }
+
+    const cleanPhone = String(phone).replace(/\D/g, '').replace(/^0/, '');
+    const fullPhone  = cleanPhone.startsWith('20') ? cleanPhone : `20${cleanPhone}`;
+    const url = `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+}
+
+
+
 function showNotification(msg, type = 'success', duration = 4000) {
     const n = document.createElement('div');
     n.className = 'fade-in';
@@ -7080,7 +7266,7 @@ function _printDailyTreasuryCurrentGroup() {
         <body>
             <div class="header">
                 <h1>💰 كشف تحصيل اليوم</h1>
-                <p>${profile.centerName || 'نظام إدارة الدروس'}</p>
+                <p>${profile.centerName || 'سنتر العباقرة'}</p>
                 <p>${todayStrAr}</p>
                 <p>${gradeObj ? gradeObj.name : ''}${groupObj ? ' — ' + groupObj.name : ''}</p>
             </div>
@@ -7179,7 +7365,7 @@ function _printDailyTreasuryAllGroups() {
             const student = db.students.find(s => s.id === p.studentId);
             return `<tr style="${i % 2 === 0 ? 'background:#fafafa;' : ''}">
                 <td style="padding:8px 12px; font-weight:700;">${student ? student.name : '—'}</td>
-                <td style="padding:8px 12px; color:#64748b;">${p.category}</td>
+                <td style="padding:8px 12px; color:#64748b;">${p.category}${p.collectedBy ? `<br><span style="font-size:.72rem; color:#94a3b8;">بواسطة: ${p.collectedBy}</span>` : ''}</td>
                 <td style="padding:8px 12px; text-align:center; font-weight:800; color:#10b981;">${p.amount} ج.م</td>
                 <td style="padding:8px 12px; text-align:center; color:#94a3b8; font-size:.8rem;">${new Date(p.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</td>
             </tr>`;
@@ -7255,7 +7441,7 @@ function _printDailyTreasuryAllGroups() {
         <body>
             <div class="main-header">
                 <h1>🖨️ كشف تحصيل جميع المجموعات</h1>
-                <p>${profile.centerName || 'نظام إدارة الدروس'}</p>
+                <p>${profile.centerName || 'سنتر العباقرة'}</p>
                 <p>${todayStrAr}</p>
             </div>
             <div class="grand-summary">
@@ -8363,7 +8549,7 @@ function printMonthlyReceipt(paymentId, size = 'thermal') {
         </head>
         <body>
             <div class="center">
-                <h3 style="margin:5px 0; font-size:15px;">نظام إدارة الدروس</h3>
+                <h3 style="margin:5px 0; font-size:15px;">سنتر العباقرة</h3>
                 <div style="font-size:11px; color:#555;">${cycleTitle}</div>
             </div>
             <hr>
@@ -8517,7 +8703,7 @@ function _buildBulkReceiptCard(payment) {
     return `
         <div class="bulk-receipt-card">
             <div class="bc-header">
-                <span class="bc-center">${profile.centerName || 'نظام إدارة الدروس'}</span>
+                <span class="bc-center">${profile.centerName || 'سنتر العباقرة'}</span>
                 <span class="bc-num">#${payment.id}</span>
             </div>
             <div class="bc-row"><span class="bc-label">الطالب</span><span class="bc-value">${student.name}</span></div>
@@ -9151,7 +9337,7 @@ function sendMonthlyReportWhatsApp() {
     const _profileWA = getProgramProfile();
     // 🔧 الاسم مثبّت دائماً "نظام إدارة الدروس" — لا يعتمد على الإعدادات المحفوظة
     const teacherLine = {
-        name: TEACHER_FIXED_NAME,
+        name: getTeacherDisplayName(),
         spec: _profileWA.specialization || 'أستاذ الرياضيات'
     };
     const examsSection = examsAttended.length > 0
@@ -9216,7 +9402,7 @@ function renderMonthlyReportBody() {
     const gradeObj = (typeof gradesList !== 'undefined') ? gradesList.find(g => String(g.id) === String(s.grade)) : null;
 
     // ── Header info ──
-    document.getElementById('report-teacher-name').innerText = `${TEACHER_FIXED_NAME} — ${profile.specialization || 'أستاذ الرياضيات'}`;
+    document.getElementById('report-teacher-name').innerText = `${getTeacherDisplayName()} — ${profile.specialization || 'أستاذ الرياضيات'}`;
     document.getElementById('report-date-range').innerText = `للفترة: ${period.label}`;
     document.getElementById('rep-st-name').innerText = s.name;
     document.getElementById('rep-st-code').innerText = s.qrCode || '---';
@@ -10182,59 +10368,68 @@ function getProgramProfile() {
     if (!db._settings.appProfile) {
         db._settings.appProfile = {
             centerName: 'نظام إدارة الدروس',
-            teacherName: 'نظام إدارة الدروس',
+            teacherName: '',
             specialization: 'أستاذ الرياضيات',
-            phone: ''
+            phone: '',
+            absenceMessage: 'السلام عليكم ورحمة الله وبركاته،\nنحيط سيادتكم علماً بأن الطالب/ـة {StudentName} لم يحضر/تحضر الحصة الدراسية اليوم.\nنرجو التكرم بمتابعة سبب الغياب.',
+            reportMessage: 'السلام عليكم ورحمة الله وبركاته،\nنرفق لسيادتكم تقرير الأداء الشهري للطالب/ـة {StudentName}.\nنسأل الله لابنكم/ابنتكم دوام التوفيق والنجاح.'
         };
     }
-    // ✅ توافق مع الملفات القديمة: تأكد من وجود التخصص دائماً
+    // ✅ توافق مع الملفات القديمة: تأكد من وجود الحقول الجديدة دائماً
     if (!db._settings.appProfile.specialization) {
         db._settings.appProfile.specialization = 'أستاذ الرياضيات';
     }
-
-    // 🔧 إصلاح: تصحيح تلقائي لأي قيمة خاطئة محفوظة سابقاً باسم المسؤول عن النظام
-    // (مثل "مدير عام"/"المدير العام" أو حقل فارغ). الاسم الصحيح دائماً
-    // هو "نظام إدارة الدروس" — لا يجوز أن يظهر أي لقب وظيفي عام مكانه.
-    // ملحوظة: التحقق يعتمد على وجود كلمة "مدير" كجزء من النص فقط (بدون تقييد
-    // بما يليها) حتى يلتقط كل الصيغ: "مدير"، "المدير"، "مدير عام"، "المدير العام".
-    const isBadValue = (v) => !v || /مدير/.test(String(v).trim());
-    // 🔧 ترحيل: تنظيف أي أسماء مدرّسين قديمة كانت محفوظة في نسخ سابقة من
-    // البرنامج (قبل توحيد الهوية باسم "نظام إدارة الدروس")، حتى لا تظهر
-    // لمستخدمين قدامى محدَّثين من نسخة أقدم.
-    const LEGACY_NAME_PATTERN = /وائل\s*مصري|محمد\s*سعد|دويدار/;
-    const isLegacyName = (v) => v && LEGACY_NAME_PATTERN.test(String(v));
-    let fixedSomething = false;
-    if (isBadValue(db._settings.appProfile.teacherName) || isLegacyName(db._settings.appProfile.teacherName)) {
-        db._settings.appProfile.teacherName = 'نظام إدارة الدروس';
-        fixedSomething = true;
+    if (db._settings.appProfile.absenceMessage === undefined) {
+        db._settings.appProfile.absenceMessage = 'السلام عليكم ورحمة الله وبركاته،\nنحيط سيادتكم علماً بأن الطالب/ـة {StudentName} لم يحضر/تحضر الحصة الدراسية اليوم.\nنرجو التكرم بمتابعة سبب الغياب.';
     }
-    if (isLegacyName(db._settings.appProfile.centerName)) {
-        db._settings.appProfile.centerName = 'نظام إدارة الدروس';
-        fixedSomething = true;
+    if (db._settings.appProfile.reportMessage === undefined) {
+        db._settings.appProfile.reportMessage = 'السلام عليكم ورحمة الله وبركاته،\nنرفق لسيادتكم تقرير الأداء الشهري للطالب/ـة {StudentName}.\nنسأل الله لابنكم/ابنتكم دوام التوفيق والنجاح.';
     }
-    if (isBadValue(db._settings.appProfile.specialization)) {
-        db._settings.appProfile.specialization = 'أستاذ الرياضيات';
-        fixedSomething = true;
+    // إذا كان teacherName قديماً (نظام إدارة الدروس) وليس اسم مدرس حقيقي، نتركه فارغاً
+    if (db._settings.appProfile.teacherName === 'نظام إدارة الدروس') {
+        db._settings.appProfile.teacherName = '';
     }
-    if (fixedSomething) {
-        // احفظ التصحيح فوراً حتى لا يتكرر الخطأ في كل مرة يُفتح فيها التطبيق
-        try { localStorage.setItem('edu_master_settings', JSON.stringify(db._settings)); } catch (e) {}
+    if (!db._settings.appProfile.centerName) {
+        db._settings.appProfile.centerName = 'سنتر العباقرة';
     }
 
     return db._settings.appProfile;
 }
 
+/** يعيد اسم المدرس المحفوظ في الإعدادات، أو نص بديل إن لم يُعيَّن */
+function getTeacherDisplayName() {
+    const profile = getProgramProfile();
+    return (profile.teacherName && profile.teacherName.trim()) ? profile.teacherName.trim() : 'سنتر العباقرة';
+}
+
+/** يعيد نص رسالة الغياب بعد استبدال {StudentName} باسم الطالب */
+function buildAbsenceMessageForStudent(studentName) {
+    const profile = getProgramProfile();
+    const template = profile.absenceMessage || 'السلام عليكم،\nالطالب/ـة {StudentName} لم يحضر اليوم.';
+    return template.replace(/\{StudentName\}/g, studentName);
+}
+
+/** يعيد نص رسالة تقرير الأداء بعد استبدال {StudentName} باسم الطالب */
+function buildReportMessageForStudent(studentName) {
+    const profile = getProgramProfile();
+    const template = profile.reportMessage || 'السلام عليكم،\nتقرير أداء الطالب/ـة {StudentName}.';
+    return template.replace(/\{StudentName\}/g, studentName);
+}
+
 // نص هوية النظام الجاهز للإضافة أسفل أي رسالة (واتساب / SMS)
-// 🔧 إصلاح نهائي: الاسم مثبّت مباشرة "نظام إدارة الدروس" ولا يعتمد على
-// أي قيمة محفوظة في الإعدادات، حتى لا يظهر أبداً أي لقب خاطئ (مثل "المدير العام")
-// بغض النظر عمّا هو مخزَّن. التخصص وحده قابل للتخصيص من شاشة الإعدادات.
-const TEACHER_FIXED_NAME = 'نظام إدارة الدروس';
+// ✅ تم تحديثه: الاسم يُقرأ الآن من إعدادات البرنامج (اسم المدرس).
 function getTeacherSignatureLine() {
+    const name = getTeacherDisplayName();
     const profile = getProgramProfile();
     const spec = profile.specialization || 'أستاذ الرياضيات';
-    // توقيع أنيق بخط فاصل يميّز نهاية الرسالة
-    return `\n\n━━━━━━━━━━━━━━\n*${TEACHER_FIXED_NAME}*\n${spec}`;
+    return `\n\n━━━━━━━━━━━━━━\n*${name}*\n${spec}`;
 }
+// للتوافق مع الأكواد القديمة التي تستخدم TEACHER_FIXED_NAME مباشرة
+// يُعاد تعريفه كدالة getter بدلاً من ثابت
+Object.defineProperty(window, 'TEACHER_FIXED_NAME', {
+    get() { return getTeacherDisplayName(); },
+    configurable: true
+});
 
 // ============================================================
 //  نظام موحّد لصياغة رسائل أولياء الأمور — هوية لغوية واحدة للمنصة
@@ -10275,7 +10470,7 @@ function getFinancialEditLog() {
 function _currentEditorLabel() {
     const profile = getProgramProfile();
     const roleLabel = (typeof RBAC !== 'undefined' && RBAC.isAdmin && RBAC.isAdmin()) ? 'المشرف' : 'مستخدم';
-    return `${roleLabel} — ${TEACHER_FIXED_NAME}`;
+    return `${roleLabel} — ${getTeacherDisplayName()}`;
 }
 
 /**
@@ -10380,7 +10575,7 @@ function viewFinancialEditLog() {
             th { background:#4f46e5; color:#fff; }
         </style></head><body>
         <h2><i class="fas fa-history"></i> سجل التعديلات المالية على الأرشيف</h2>
-        <div class="sub">${TEACHER_FIXED_NAME} — ${profile.specialization || 'أستاذ الرياضيات'}</div>
+        <div class="sub">${getTeacherDisplayName()} — ${profile.specialization || 'أستاذ الرياضيات'}</div>
         <table>
             <thead><tr>
                 <th>اسم الطالب</th><th>الشهر / الدورة</th><th>الحالة القديمة</th><th>الحالة الجديدة</th>
@@ -10400,10 +10595,10 @@ function applyProgramProfile() {
     document.title = `${profile.centerName} | نظام الإدارة`;
 
     const logo = document.querySelector('.logo');
-    if (logo) logo.innerHTML = `<i class="fas fa-book-open"></i> ${profile.centerName || 'نظام إدارة الدروس'}`;
+    if (logo) logo.innerHTML = `<i class="fas fa-book-open"></i> ${profile.centerName || 'سنتر العباقرة'}`;
 
     const userName = document.querySelector('.user-profile span');
-    if (userName) userName.innerText = TEACHER_FIXED_NAME;
+    if (userName) userName.innerText = getTeacherDisplayName();
 
     const userSpec = document.querySelector('.user-profile .user-specialization');
     if (userSpec) userSpec.innerText = profile.specialization || 'أستاذ الرياضيات';
@@ -10453,8 +10648,8 @@ function ensureSettingsSection() {
                     <input id="settings-center-name" class="form-input" type="text">
                 </div>
                 <div class="settings-row">
-                    <label for="settings-teacher-name">اسم المستخدم / المدير</label>
-                    <input id="settings-teacher-name" class="form-input" type="text">
+                    <label for="settings-teacher-name">اسم المدرس</label>
+                    <input id="settings-teacher-name" class="form-input" type="text" placeholder="مثال: محمد أحمد">
                 </div>
                 <div class="settings-row">
                     <label for="settings-specialization">التخصص / الوظيفة</label>
@@ -10466,6 +10661,23 @@ function ensureSettingsSection() {
                 </div>
                 <button class="btn btn-primary" onclick="saveProgramSettings()">
                     <i class="fas fa-save"></i> حفظ الإعدادات
+                </button>
+            </div>
+
+            <div class="settings-panel" style="grid-column: span 2;">
+                <h3><i class="fas fa-comment-alt"></i> نصوص الرسائل</h3>
+                <div class="settings-row">
+                    <label for="settings-absence-message">نص رسالة الغياب اليومية</label>
+                    <small style="color:var(--text-muted); display:block; margin-bottom:0.5rem;">استخدم <code>{StudentName}</code> ليتم استبداله باسم الطالب تلقائياً عند الإرسال.</small>
+                    <textarea id="settings-absence-message" class="form-input" style="height:130px; resize:vertical; font-size:0.9rem;"></textarea>
+                </div>
+                <div class="settings-row" style="margin-top:1rem;">
+                    <label for="settings-report-message">نص رسالة تقرير الأداء الشهري</label>
+                    <small style="color:var(--text-muted); display:block; margin-bottom:0.5rem;">استخدم <code>{StudentName}</code> ليتم استبداله باسم الطالب تلقائياً عند الإرسال.</small>
+                    <textarea id="settings-report-message" class="form-input" style="height:130px; resize:vertical; font-size:0.9rem;"></textarea>
+                </div>
+                <button class="btn btn-primary" style="margin-top:1rem;" onclick="saveProgramSettings()">
+                    <i class="fas fa-save"></i> حفظ الرسائل
                 </button>
             </div>
 
@@ -10601,13 +10813,20 @@ function renderProgramSettings() {
     const zoom = document.getElementById('settings-zoom-label');
 
     if (center) center.value = profile.centerName || '';
-    if (teacher) teacher.value = TEACHER_FIXED_NAME;
+    // ✅ اسم المدرس الآن يُقرأ من الإعدادات مباشرة (يعبّئه المدير بنفسه)
+    if (teacher) teacher.value = profile.teacherName || '';
     if (specialization) specialization.value = profile.specialization || '';
     if (phone) phone.value = profile.phone || '';
     if (fee) fee.value = db.settings.monthlyFee || 0;
     if (commission) commission.value = db.settings.centerCommissionPercent || 0;
     if (printWidth) printWidth.value = localStorage.getItem('alamin_print_width') || '80mm';
     if (zoom) zoom.innerText = `${Math.round(appZoom * 100)}%`;
+
+    // ✅ تعبئة حقول نصوص الرسائل
+    const absenceMsgEl = document.getElementById('settings-absence-message');
+    const reportMsgEl = document.getElementById('settings-report-message');
+    if (absenceMsgEl) absenceMsgEl.value = profile.absenceMessage || '';
+    if (reportMsgEl) reportMsgEl.value = profile.reportMessage || '';
 
     const activeTheme = normalizeAppTheme(localStorage.getItem(APP_THEME_KEY) || 'morning');
     document.getElementById('settings-morning-btn')?.classList.toggle('active', activeTheme === 'morning');
@@ -10628,9 +10847,16 @@ function renderProgramSettings() {
 function saveProgramSettings() {
     const profile = getProgramProfile();
     profile.centerName = document.getElementById('settings-center-name')?.value.trim() || 'نظام إدارة الدروس';
-    profile.teacherName = TEACHER_FIXED_NAME; // الاسم مثبّت على مستوى البرنامج كله ولا يتغيّر من الإعدادات
+    // ✅ اسم المدرس يُحفظ من حقل الإدخال مباشرة (يُدخله المدير مرة واحدة)
+    profile.teacherName = document.getElementById('settings-teacher-name')?.value.trim() || '';
     profile.specialization = document.getElementById('settings-specialization')?.value.trim() || 'أستاذ الرياضيات';
     profile.phone = document.getElementById('settings-phone')?.value.trim() || '';
+
+    // ✅ حفظ نصوص الرسائل
+    const absenceMsg = document.getElementById('settings-absence-message')?.value || '';
+    const reportMsg = document.getElementById('settings-report-message')?.value || '';
+    if (absenceMsg) profile.absenceMessage = absenceMsg;
+    if (reportMsg) profile.reportMessage = reportMsg;
 
     const monthlyFee = parseFloat(document.getElementById('settings-monthly-fee')?.value || '0');
     const commission = parseFloat(document.getElementById('settings-commission')?.value || '0');
@@ -11192,7 +11418,7 @@ function generatePrintableIDCards(students, mode = 'normal') {
             '.page { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; page-break-after: always; }' +
             '.card { border: 1px solid #cbd5e1; border-radius: 10px; padding: 0; height: 55mm; display: flex; flex-direction: column; position: relative; box-sizing: border-box; background: #fff; page-break-inside: avoid; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }' +
             '.card-header { background: linear-gradient(135deg, #4f46e5, #4338ca); color: #fff; padding: 8px 12px; }' +
-            '.card-header .teacher-name { font-weight: 800; font-size: 0.95rem; line-height: 1.3; }' +
+            '.card-header .teacher-name { font-weight: 800; font-size: 0.95rem; line-height: 1.3; margin-bottom: 2px; }' +
             '.card-header .teacher-spec { font-size: 0.65rem; opacity: 0.9; }' +
             '.card-body { padding: 10px 12px; display: flex; flex-direction: column; flex: 1; }' +
             '.info-row { font-size: 0.85rem; margin-bottom: 5px; color: #475569; }' +
@@ -11237,6 +11463,7 @@ function generatePrintableIDCards(students, mode = 'normal') {
 
                 html += '<div class="card">' +
                     '<div class="card-header">' +
+                    '<div class="teacher-name">سنتر العباقرة</div>' +
                     '<div class="grade-badge">' + gradeName + '</div>' +
                     '</div>' +
                     '<div class="card-body">' +
@@ -11423,6 +11650,26 @@ function finishLoginFlow(role) {
         if (role === 'employee') {
             setTimeout(() => showSection('attendance'), 2200);
         }
+
+        // ── فحص الـ URL: لو فيه ?student=ID → افتح ملف الطالب مباشرة ──
+        // (يُستخدَم عند مسح QR Code الخاص بالطالب من التليفون)
+        const _qrStudentId = new URLSearchParams(window.location.search).get('student');
+        if (_qrStudentId) {
+            const _qrDelay = role === 'employee' ? 3200 : 2600;
+            setTimeout(() => {
+                const sid = isNaN(_qrStudentId) ? _qrStudentId : Number(_qrStudentId);
+                if (typeof viewDetailedProfile === 'function') {
+                    showSection('students');
+                    setTimeout(() => viewDetailedProfile(sid), 500);
+                }
+                // إزالة الـ param من الـ URL بعد الفتح بدون إعادة تحميل الصفحة
+                try {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('student');
+                    window.history.replaceState({}, '', url.toString());
+                } catch(e) {}
+            }, _qrDelay);
+        }
     }, 800);
 }
 window.finishLoginFlow = finishLoginFlow;
@@ -11445,6 +11692,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const passwords = db._settings && db._settings.globalPasswords;
             if (passwords) localStorage.setItem('_fallback_passwords', JSON.stringify(passwords));
+        } catch(e) {}
+
+        // ── عرض قائمة السكرتارية مباشرة على شاشة الدخول الرئيسية ──
+        // (بجانب كلمة مرور المشرف) لو كان هناك حسابات سكرتير مُضافة
+        try {
+            if (typeof renderSplashSecretaryQuickSelect === 'function') renderSplashSecretaryQuickSelect();
         } catch(e) {}
 
         // ── بدء طبقة المزامنة السحابية (Firestore) — لا تمنع تشغيل

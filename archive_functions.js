@@ -72,7 +72,8 @@ function viewArchivedCycle(cycleId) {
                 name: s.name,
                 code: s.qrCode,
                 amount: lessonPay.amount,
-                date: lessonPay.date
+                date: lessonPay.date,
+                collectedBy: lessonPay.collectedBy || null
             });
         }
 
@@ -86,7 +87,8 @@ function viewArchivedCycle(cycleId) {
                         course: ps.course_title,
                         amount: ps.amount,
                         date: ps.payment_date,
-                        sync: ps.sync_status
+                        sync: ps.sync_status,
+                        collectedBy: ps.collectedBy || null
                     });
                 });
             } else if (platformPay) {
@@ -97,7 +99,8 @@ function viewArchivedCycle(cycleId) {
                     course: platformPay.platformCourseTitle || (cycle.activePlatformCourse ? cycle.activePlatformCourse.courseTitle : 'كورس المنصة'),
                     amount: platformPay.amount,
                     date: platformPay.date,
-                    sync: 1
+                    sync: 1,
+                    collectedBy: platformPay.collectedBy || null
                 });
             }
         }
@@ -107,20 +110,27 @@ function viewArchivedCycle(cycleId) {
             let type = '';
             let totalAmount = 0;
             let date = '';
+            const collectors = new Set();
 
             if (hasLesson && hasPlatform) {
                 type = 'اشتراك درس + منصة';
                 const platformAmt = studentPlatformSubs.reduce((sum, ps) => sum + ps.amount, 0) || (platformPay ? platformPay.amount : 0);
                 totalAmount = lessonPay.amount + platformAmt;
                 date = lessonPay.date;
+                if (lessonPay.collectedBy) collectors.add(lessonPay.collectedBy);
+                studentPlatformSubs.forEach(ps => { if (ps.collectedBy) collectors.add(ps.collectedBy); });
+                if (platformPay && platformPay.collectedBy) collectors.add(platformPay.collectedBy);
             } else if (hasLesson) {
                 type = 'اشتراك درس';
                 totalAmount = lessonPay.amount;
                 date = lessonPay.date;
+                if (lessonPay.collectedBy) collectors.add(lessonPay.collectedBy);
             } else {
                 type = 'اشتراك منصة';
                 totalAmount = studentPlatformSubs.reduce((sum, ps) => sum + ps.amount, 0) || (platformPay ? platformPay.amount : 0);
                 date = studentPlatformSubs[0] ? studentPlatformSubs[0].payment_date : (platformPay ? platformPay.date : '');
+                studentPlatformSubs.forEach(ps => { if (ps.collectedBy) collectors.add(ps.collectedBy); });
+                if (platformPay && platformPay.collectedBy) collectors.add(platformPay.collectedBy);
             }
 
             combinedPaidList.push({
@@ -128,7 +138,8 @@ function viewArchivedCycle(cycleId) {
                 code: s.qrCode,
                 type: type,
                 totalAmount: totalAmount,
-                date: date
+                date: date,
+                collectedBy: collectors.size ? [...collectors].join(' + ') : null
             });
         } else {
             // د. الطلاب غير الدافعين
@@ -360,6 +371,7 @@ function viewArchivedCycle(cycleId) {
                                 <th>نوع العملية</th>
                                 <th>إجمالي المدفوع</th>
                                 <th>تاريخ الدفع</th>
+                                <th>بواسطة</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -378,8 +390,9 @@ function viewArchivedCycle(cycleId) {
                                     </td>
                                     <td style="font-weight:bold; color:var(--primary);">${item.totalAmount} ج.م</td>
                                     <td>${new Date(item.date).toLocaleDateString('ar-EG')}</td>
+                                    <td style="color:var(--text-muted); font-size:.85rem;">${item.collectedBy || '—'}</td>
                                 </tr>
-                            `).join('') || '<tr><td colspan="5" style="text-align:center; padding:2rem;">لا توجد عمليات سداد مسجلة بعد</td></tr>'}
+                            `).join('') || '<tr><td colspan="6" style="text-align:center; padding:2rem;">لا توجد عمليات سداد مسجلة بعد</td></tr>'}
                         </tbody>
                     </table>
                 </div>
@@ -395,6 +408,7 @@ function viewArchivedCycle(cycleId) {
                                 <th>الشهر</th>
                                 <th>قيمة الاشتراك</th>
                                 <th>تاريخ الدفع</th>
+                                <th>بواسطة</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -405,8 +419,9 @@ function viewArchivedCycle(cycleId) {
                                     <td>${cycle.title}</td>
                                     <td style="font-weight:bold; color:var(--accent);">${item.amount} ج.م</td>
                                     <td>${new Date(item.date).toLocaleDateString('ar-EG')}</td>
+                                    <td style="color:var(--text-muted); font-size:.85rem;">${item.collectedBy || '—'}</td>
                                 </tr>
-                            `).join('') || '<tr><td colspan="5" style="text-align:center; padding:2rem;">لا توجد اشتراكات دروس مسجلة بعد</td></tr>'}
+                            `).join('') || '<tr><td colspan="6" style="text-align:center; padding:2rem;">لا توجد اشتراكات دروس مسجلة بعد</td></tr>'}
                         </tbody>
                     </table>
                 </div>
@@ -423,6 +438,7 @@ function viewArchivedCycle(cycleId) {
                                 <th>قيمة اشتراك المنصة</th>
                                 <th>تاريخ الدفع</th>
                                 <th>حالة المزامنة</th>
+                                <th>بواسطة</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -439,8 +455,9 @@ function viewArchivedCycle(cycleId) {
                                             : '<span style="color:var(--warning); font-weight:700;"><i class="fas fa-clock"></i> معلقة محلياً</span>'
                                         }
                                     </td>
+                                    <td style="color:var(--text-muted); font-size:.85rem;">${item.collectedBy || '—'}</td>
                                 </tr>
-                            `).join('') || '<tr><td colspan="6" style="text-align:center; padding:2rem;">لا توجد اشتراكات منصة مسجلة بعد</td></tr>'}
+                            `).join('') || '<tr><td colspan="7" style="text-align:center; padding:2rem;">لا توجد اشتراكات منصة مسجلة بعد</td></tr>'}
                         </tbody>
                     </table>
                 </div>
