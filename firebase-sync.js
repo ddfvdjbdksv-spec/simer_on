@@ -282,6 +282,7 @@ const CloudSync = (() => {
             } catch (err) {
                 console.error(`[CloudSync] ❌ فشلت مزامنة ${table} (${chunk.length} سجل):`, err);
                 setStatus('error');
+                throw err;
             }
         }
         setStatus(navigator.onLine ? 'online' : 'offline');
@@ -290,6 +291,13 @@ const CloudSync = (() => {
     function pushAllTables() {
         SYNC_TABLES.forEach(t => pushTableDiff(t).catch(e => console.error(`[CloudSync] push ${t} failed`, e)));
         pushSettings().catch(e => console.error('[CloudSync] push settings failed', e));
+    }
+
+    async function syncTableNow(table) {
+        if (!ready || !SYNC_TABLES.includes(table)) {
+            throw new Error('CloudSync is not ready for table: ' + table);
+        }
+        return pushTableDiff(table);
     }
 
     // ── رفع يدوي بزر — يرجع تقرير واضح بعدد السجلات المرفوعة فعليًا ──
@@ -368,6 +376,22 @@ const CloudSync = (() => {
 
         hashes[table] = tableHashes;
         return changed;
+    }
+
+    async function replaceLocalTableFromRemote(table, remoteArr) {
+        if (!Array.isArray(db[table])) db[table] = [];
+        await StorageEngine.clear(table).catch(() => { });
+        db[table] = remoteArr.slice();
+        if (remoteArr.length > 0) {
+            await StorageEngine.save(table, remoteArr).catch(() => { });
+        }
+        hashes[table] = {};
+        remoteArr.forEach(rec => {
+            if (rec && rec.id !== undefined && rec.id !== null) {
+                hashes[table][String(rec.id)] = hashOf(rec);
+            }
+        });
+        return true;
     }
 
     // ── جلب يدوي بزر — دمج البيانات المحلية مع بيانات السحابة دون مسح التعديلات المحلية ──
@@ -546,7 +570,9 @@ const CloudSync = (() => {
                     remoteArr.push(data);
                 });
 
-                if (remoteArr.length > 0) {
+                if (isFreshSync) {
+                    await replaceLocalTableFromRemote(table, remoteArr);
+                } else if (remoteArr.length > 0) {
                     await mergeRemoteTable(table, remoteArr);
                 }
             }
@@ -555,7 +581,7 @@ const CloudSync = (() => {
             if (settingsDoc.exists) {
                 const remoteSettings = { ...settingsDoc.data() };
                 delete remoteSettings._syncedAt;
-                db._settings = { ...db._settings, ...remoteSettings };
+                db._settings = isFreshSync ? remoteSettings : { ...db._settings, ...remoteSettings };
                 try { localStorage.setItem('edu_master_settings', JSON.stringify(db._settings)); } catch (e) {}
                 hashes.__settings = hashOf(db._settings);
             }
@@ -638,6 +664,7 @@ const CloudSync = (() => {
     return {
         init, onLocalSave, pushAllTables, isReady: () => ready, debugInfo,
         forceSync: pushAllTables,
+        syncTableNow,
         manualPushToCloud, manualPullFromCloud,
         getFirestoreDB: () => fsDB
     };

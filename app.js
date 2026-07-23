@@ -415,6 +415,19 @@ const StorageEngine = {
         }
     },
 
+    async clear(storeName) {
+        if (!this.db) await this.init();
+        if (!this.db || !this.db.objectStoreNames.contains(storeName)) return;
+        const transaction = this.db.transaction([storeName], "readwrite");
+        const store = transaction.objectStore(storeName);
+        store.clear();
+        await new Promise((resolve) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => resolve();
+            transaction.onabort = () => resolve();
+        });
+    },
+
     async get(storeName, id) {
         return new Promise((resolve) => {
             if (!this.db || !this.db.objectStoreNames.contains(storeName)) return resolve(null);
@@ -2124,6 +2137,7 @@ async function handleStudentSubmit(printAfter = false) {
 
         db.students.push(student);
         await StorageEngine.save('students', student);
+        const studentCloudOk = await waitForCloudTableSync('students');
 
         studentListPage = 0;
         renderStudents();
@@ -2145,6 +2159,7 @@ async function handleStudentSubmit(printAfter = false) {
                 };
                 db.attendance.push(att);
                 await StorageEngine.save('attendance', att);
+                await waitForCloudTableSync('attendance');
             }
         }
 
@@ -2155,7 +2170,11 @@ async function handleStudentSubmit(printAfter = false) {
         document.getElementById('std-group').value = '';
 
         toggleModal('student-modal', false);
-        showNotification('تم إضافة الطالب بنجاح');
+        if (studentCloudOk) {
+            showNotification('تم إضافة الطالب وحفظه في قاعدة البيانات بنجاح', 'success');
+        } else {
+            showNotification('تم حفظ الطالب على الجهاز فقط، ولم يتم تأكيد رفعه لقاعدة البيانات. تأكد من الاتصال واضغط مزامنة.', 'warning');
+        }
 
         // ✅ لو المستخدم ضغط "حفظ وطباعة الكود" — نفتح الطباعة فورًا لنفس الطالب
         if (printAfter && typeof generatePrintableIDCards === 'function') {
@@ -11362,10 +11381,71 @@ function processManualEntry(context) {
 }
 
 // --- 9. ID Cards & Print Codes ---
+const ID_CARD_PRINT_SETTINGS_KEY = 'edu_idcard_print_settings';
+const DEFAULT_ID_CARD_PRINT_SETTINGS = {
+    mode: 'thermal',
+    width: '80',
+    height: '40',
+    font: '14',
+    barcodeHeight: '50'
+};
+let idCardPrintSettingsBound = false;
+
+function getIDCardPrintSettings() {
+    try {
+        return { ...DEFAULT_ID_CARD_PRINT_SETTINGS, ...(JSON.parse(localStorage.getItem(ID_CARD_PRINT_SETTINGS_KEY) || '{}') || {}) };
+    } catch (e) {
+        return { ...DEFAULT_ID_CARD_PRINT_SETTINGS };
+    }
+}
+
+function saveIDCardPrintSettings() {
+    const settings = {
+        mode: document.getElementById('print-type-main')?.value || DEFAULT_ID_CARD_PRINT_SETTINGS.mode,
+        width: document.getElementById('thermal-w')?.value || DEFAULT_ID_CARD_PRINT_SETTINGS.width,
+        height: document.getElementById('thermal-h')?.value || DEFAULT_ID_CARD_PRINT_SETTINGS.height,
+        font: document.getElementById('thermal-font')?.value || DEFAULT_ID_CARD_PRINT_SETTINGS.font,
+        barcodeHeight: document.getElementById('thermal-barcode-h')?.value || DEFAULT_ID_CARD_PRINT_SETTINGS.barcodeHeight
+    };
+    try { localStorage.setItem(ID_CARD_PRINT_SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
+    return settings;
+}
+
+function applyIDCardPrintSettings() {
+    const settings = getIDCardPrintSettings();
+    const typeEl = document.getElementById('print-type-main');
+    const widthEl = document.getElementById('thermal-w');
+    const heightEl = document.getElementById('thermal-h');
+    const fontEl = document.getElementById('thermal-font');
+    const barcodeEl = document.getElementById('thermal-barcode-h');
+
+    if (typeEl) typeEl.value = settings.mode;
+    if (widthEl) widthEl.value = settings.width;
+    if (heightEl) heightEl.value = settings.height;
+    if (fontEl) fontEl.value = settings.font;
+    if (barcodeEl) barcodeEl.value = settings.barcodeHeight;
+    toggleThermalOptions(false);
+}
+
+function bindIDCardPrintSettings() {
+    if (idCardPrintSettingsBound) return;
+    const ids = ['print-type-main', 'thermal-w', 'thermal-h', 'thermal-font', 'thermal-barcode-h'];
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('change', saveIDCardPrintSettings);
+        el.addEventListener('input', saveIDCardPrintSettings);
+    });
+    idCardPrintSettingsBound = true;
+}
+
 function initIDCardsSection() {
     const groupSelect = document.getElementById('idcard-group-select');
     const studentSelect = document.getElementById('idcard-student-select');
     if (!groupSelect || !studentSelect) return;
+
+    bindIDCardPrintSettings();
+    applyIDCardPrintSettings();
 
     // Filter by current grade
     const gradeGroups = db.groups.filter(g => g.grade == currentGrade);
@@ -11382,10 +11462,11 @@ function initIDCardsSection() {
         sortedStudents.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
 }
 
-function toggleThermalOptions() {
+function toggleThermalOptions(shouldSave = true) {
     const type = document.getElementById('print-type-main').value;
     const panel = document.getElementById('thermal-config-panel');
     if (panel) panel.style.display = (type === 'thermal') ? 'block' : 'none';
+    if (shouldSave) saveIDCardPrintSettings();
 }
 
 function printGroupCodes() {
@@ -11409,6 +11490,7 @@ function printStudentCode() {
 }
 
 function generatePrintableIDCards(students, mode = 'normal') {
+    saveIDCardPrintSettings();
     const printWindow = window.open('', '_blank');
     const isThermal = mode === 'thermal';
     const profile = (typeof getProgramProfile === 'function') ? getProgramProfile() : {};
@@ -11694,6 +11776,19 @@ function finishLoginFlow(role) {
 }
 window.finishLoginFlow = finishLoginFlow;
 
+async function waitForCloudTableSync(table) {
+    if (typeof CloudSync === 'undefined' || !CloudSync.isReady || !CloudSync.isReady() || !CloudSync.syncTableNow) {
+        return false;
+    }
+    try {
+        await CloudSync.syncTableNow(table);
+        return true;
+    } catch (err) {
+        console.warn('[CloudSync] immediate table sync failed', table, err);
+        return false;
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     // ─── إظهار شاشة كلمة المرور فوراً بدون انتظار أي شيء ───
     // هذا يضمن ظهور الشاشة حتى بدون إنترنت عند أول تشغيل
@@ -11723,7 +11818,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // ── بدء طبقة المزامنة السحابية (Firestore) — لا تمنع تشغيل
         // النظام لو فشلت أو لو مفيش إنترنت؛ النظام يعمل محليًا زي العادة ──
         if (typeof CloudSync !== 'undefined') {
-            CloudSync.init().catch(e => console.warn('[CloudSync] init error', e));
+            await CloudSync.init().catch(e => console.warn('[CloudSync] init error', e));
         }
     } catch (err) {
         // حتى لو فشل التحميل، تبقى شاشة المرور ظاهرة
@@ -11791,11 +11886,16 @@ async function handleStudentUpdate(printAfter = false) {
     student.parentPhone = parent;
 
     await StorageEngine.save('students', student);
+    const studentCloudOk = await waitForCloudTableSync('students');
 
     const idx = db.students.findIndex(s => s.id == id);
     if (idx !== -1) db.students[idx] = student;
 
-    showNotification('تم تحديث بيانات الطالب بنجاح');
+    if (studentCloudOk) {
+        showNotification('تم تحديث بيانات الطالب في قاعدة البيانات بنجاح', 'success');
+    } else {
+        showNotification('تم تحديث الطالب على الجهاز فقط، ولم يتم تأكيد رفعه لقاعدة البيانات.', 'warning');
+    }
     toggleModal('edit-student-modal', false);
     renderStudents();
 
@@ -11995,6 +12095,7 @@ navItems.forEach(item => {
 });
 
 function generatePrintCalibration() {
+    applyIDCardPrintSettings();
     const dummyStudent = {
         name: 'طالب تجريبي (معايرة)',
         qrCode: '1234567890123',
@@ -12002,8 +12103,7 @@ function generatePrintCalibration() {
         groupId: 'test'
     };
     const mode = document.getElementById('print-type-main').value;
-    const thermalWidth = document.getElementById('thermal-width-select')?.value || '80mm';
-    generatePrintableIDCards([dummyStudent], mode, thermalWidth);
+    generatePrintableIDCards([dummyStudent], mode);
 }// --- Shift Management Foundations ---
 let staffStream = null;
 
@@ -12531,4 +12631,3 @@ async function diagnoseStaffAuth(testPin = null) {
 }
 
 window.diagnoseStaffAuth = diagnoseStaffAuth;
-

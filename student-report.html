@@ -71,6 +71,9 @@
         .spinner { animation:spin 1s linear infinite; }
         @keyframes spin { to { transform:rotate(360deg); } }
         .page-footer { text-align:center; padding:1.5rem; color:var(--muted); font-size:0.78rem; }
+        .developer-credit { margin-top:0.85rem; padding-top:0.85rem; border-top:1px solid #dbe4ee; font-weight:800; color:#0f4c81; }
+        .developer-credit a { color:#10b981; text-decoration:none; font-weight:900; }
+        .developer-credit a:hover { text-decoration:underline; }
         .empty { text-align:center; padding:1.5rem; color:var(--muted); font-size:0.9rem; }
     </style>
 </head>
@@ -150,6 +153,11 @@
         <div class="page-footer">
             تقرير أداء الطالب — يتحدث تلقائياً مع كل تغيير في البيانات<br>
             <span id="last-update" style="font-size:0.72rem;margin-top:0.2rem;display:block;"></span>
+            <div class="developer-credit">
+                تم التصميم والتطوير بواسطة
+                <a href="https://wa.me/201001352771" target="_blank" rel="noopener">ENG Ahmed Amr Abo Elhag</a>
+                <span dir="ltr">01001352771</span>
+            </div>
         </div>
     </div>
 </div>
@@ -177,7 +185,6 @@ window.addEventListener('DOMContentLoaded',async()=>{
     try{
         firebase.initializeApp(FIREBASE_CONFIG);
         fsDB=firebase.firestore();
-        try{await fsDB.enablePersistence({synchronizeTabs:true});}catch(e){}
         await loadAll();
         attachListeners();
     }catch(err){showError('تعذّر الاتصال: '+(err.message||err));}
@@ -186,13 +193,13 @@ window.addEventListener('DOMContentLoaded',async()=>{
 async function loadAll(){
     const tables=['students','groups','attendance','absenceSessions','exams','scores','payments','cycles'];
     await Promise.all(tables.map(async t=>{
-        const snap=await fsDB.collection(t).get();
+        const snap=await fsDB.collection(t).get({ source: 'server' });
         allData[t]=[];
         snap.forEach(d=>{const id=isNaN(Number(d.id))?d.id:Number(d.id);allData[t].push({...d.data(),id});});
     }));
 
     try {
-        const sDoc = await fsDB.collection('meta').doc('settings').get();
+        const sDoc = await fsDB.collection('meta').doc('settings').get({ source: 'server' });
         if(sDoc.exists) allData.settings = sDoc.data();
     } catch(e) {}
 
@@ -204,7 +211,8 @@ async function loadAll(){
 function attachListeners(){
     const tables=['students','groups','attendance','absenceSessions','exams','scores','payments','cycles'];
     tables.forEach(t=>{
-        const u=fsDB.collection(t).onSnapshot(snap=>{
+        const u=fsDB.collection(t).onSnapshot({ includeMetadataChanges: true }, snap=>{
+            if(snap.metadata && snap.metadata.fromCache) return;
             allData[t]=[];
             snap.forEach(d=>{const id=isNaN(Number(d.id))?d.id:Number(d.id);allData[t].push({...d.data(),id});});
             studentData=allData.students.find(s=>String(s.id)===String(studentId));
@@ -215,7 +223,8 @@ function attachListeners(){
         unsubs.push(u);
     });
 
-    const su = fsDB.collection('meta').doc('settings').onSnapshot(doc=>{
+    const su = fsDB.collection('meta').doc('settings').onSnapshot({ includeMetadataChanges: true }, doc=>{
+        if(doc.metadata && doc.metadata.fromCache) return;
         if(doc.exists) allData.settings = doc.data();
         if(studentData) { buildPeriods(); renderReport(); }
     },e=>console.warn('settings listener error',e));
